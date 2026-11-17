@@ -1,0 +1,1 @@
+source ~/SDKs/Vulkan/default/setup-env.sh
