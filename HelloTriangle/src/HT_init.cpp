@@ -260,7 +260,7 @@ void HelloTriangle::createTextureSampler() {
 void HelloTriangle::createDepthResources() {
     vk::ImageCreateInfo imageInfo{
         .imageType   = vk::ImageType::e2D,
-        .format      = vk::Format::eD24UnormS8Uint,
+        .format      = vk::Format::eD32Sfloat,
         .extent      = {swapChainExtent.width, swapChainExtent.height, 1},
         .mipLevels   = 1,
         .arrayLayers = 1,
@@ -281,5 +281,5 @@ void HelloTriangle::createDepthResources() {
     depthImageMemory = vk::raii::DeviceMemory(device, allocInfo);
     depthImage.bindMemory(depthImageMemory, 0);
 
-    depthImageView  = createImageView(depthImage, vk::Format::eD24UnormS8Uint, vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil);
+    depthImageView  = createImageView(depthImage, vk::Format::eD32Sfloat, vk::ImageAspectFlagBits::eDepth);
 }

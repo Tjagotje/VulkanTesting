@@ -4,12 +4,18 @@ struct VSInput {
     float2 inTexCoord;
 };
 
-struct UniformBuffer {
+struct InstanceData {
     float4x4 model;
     float4x4 view;
     float4x4 proj;
 };
-ConstantBuffer<UniformBuffer> ubo;
+
+struct InstanceDataBuffer {
+    InstanceData instances[4];
+};
+
+[[vk::binding(0,0)]]
+ConstantBuffer<InstanceDataBuffer> idb;
 
 Sampler2D texture;
 
@@ -21,9 +27,13 @@ struct VSOutput
 };
 
 [shader("vertex")]
-VSOutput vertMain(VSInput input) {
+VSOutput vertMain(VSInput input, uint instanceID: SV_InstanceID) {
     VSOutput output;
-    output.pos = mul(ubo.proj, mul(ubo.view, mul(ubo.model, float4(input.inPos, 1.0))));
+
+    InstanceData idata = idb.instances[instanceID];
+
+    float4 pos = float4(input.inPos, 1.0f);
+    output.pos = mul(idata.proj, mul(idata.view, mul(idata.model, pos)));
     output.fragColor = input.inColor;
     output.fragTexCoord = input.inTexCoord;
     return output;

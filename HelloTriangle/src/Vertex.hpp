@@ -24,7 +24,7 @@ struct Vertex{
     }
 };
 
-struct UniformBufferObject
+struct InstanceData
 {
     glm::mat4 model;
     glm::mat4 view;

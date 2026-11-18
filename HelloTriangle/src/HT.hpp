@@ -172,6 +172,7 @@ private:
     glm::vec3 eye_pos = glm::vec3(2.0f);
     float rot = 0.0f;
     float dist = 2.0f;
+    float height = 2.0f;
 
     vk::raii::Image        textureImage       = nullptr;
     vk::raii::DeviceMemory textureImageMemory = nullptr;

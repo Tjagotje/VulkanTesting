@@ -36,7 +36,13 @@ void HelloTriangle::mainLoop() {
             dist += 0.03f;
         }
 
-        eye_pos = dist * glm::vec3(glm::cos(rot) * 2.0f, glm::sin(rot) * 2.0f, 2.0f);
+        if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
+            height += 0.03f;
+        } else if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
+            height -= 0.03f;
+        }
+
+        eye_pos = dist * glm::vec3(glm::cos(rot) * 2.0f, glm::sin(rot) * 2.0f, height);
 
         if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
             break;

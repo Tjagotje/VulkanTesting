@@ -1,6 +1,7 @@
 #include "HT.hpp"
 #include "Vertex.hpp"
 #include "vulkan/vulkan.hpp"
+#include <glm/ext/matrix_transform.hpp>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -14,7 +15,8 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <chrono>
+
+const uint INSTANCE_COUNT = 40;
 
 static std::vector<char> readFile(const std::string& filename) {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
@@ -164,7 +166,7 @@ void HelloTriangle::createGraphicsPipeline() {
         {
             .colorAttachmentCount = 1,
             .pColorAttachmentFormats = &swapChainSurfaceFormat.format,
-            .depthAttachmentFormat = vk::Format::eD24UnormS8Uint,
+            .depthAttachmentFormat = vk::Format::eD32Sfloat,
         }
     };
 
@@ -258,8 +260,20 @@ void HelloTriangle::recordCommandBuffer(uint32_t imageIndex) {
     commandBuffer.bindVertexBuffers(0, *vertexBuffer, {0});
     commandBuffer.bindIndexBuffer(*indexBuffer, 0, vk::IndexType::eUint16);
 
-    commandBuffers[frameIndex].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, *descriptorSets[frameIndex], nullptr);
-    commandBuffer.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+    commandBuffers[frameIndex].bindDescriptorSets(
+        vk::PipelineBindPoint::eGraphics,
+        pipelineLayout,
+        0,
+        *descriptorSets[frameIndex],
+        nullptr
+    );
+    commandBuffer.drawIndexed(
+        static_cast<uint32_t>(indices.size()),
+        INSTANCE_COUNT,
+        0,
+        0,
+        0
+    );
 
     commandBuffer.endRendering();
 
@@ -398,7 +412,7 @@ void HelloTriangle::createDescriptorSetLayout() {
 void HelloTriangle::createUniformBuffers(){
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
-        vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
+        vk::DeviceSize bufferSize = sizeof(InstanceData) * INSTANCE_COUNT;
         auto [buffer, bufferMem]  = createBuffer(
             bufferSize, vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
         uniformBuffers.emplace_back(std::move(buffer));
@@ -409,23 +423,30 @@ void HelloTriangle::createUniformBuffers(){
 
 void HelloTriangle::updateUniformBuffer(uint32_t currentImage)
 {
-    static auto startTime = std::chrono::high_resolution_clock::now();
+    //static auto startTime = std::chrono::high_resolution_clock::now();
 
-    auto currentTime = std::chrono::high_resolution_clock::now();
+    //auto currentTime = std::chrono::high_resolution_clock::now();
     //float time       = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
 
+    std::vector<InstanceData> instances(INSTANCE_COUNT);
 
-    UniformBufferObject ubo{};
-    ubo.model = glm::mat4(1.0f);
-    ubo.view = lookAt(eye_pos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.proj = glm::perspective(
+    glm::mat4 view = lookAt(eye_pos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    glm::mat4 proj = glm::perspective(
         glm::radians(45.0f),
         static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height),
         0.1f,
-        10.0f);
+        100.0f);
+    InstanceData default_instance = {.model = glm::mat4(1.0f), .view = view, .proj = proj};
 
-    memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+    for(int i = 0; i < INSTANCE_COUNT; ++i){
+        instances[i] = default_instance;
+        float float_i = (float) i;
+        instances[i].model = glm::translate(glm::mat4(1.0f), glm::vec3(
+            0.5f * float_i * glm::cos(2.0f * glm::sqrt(float_i)), 0.5f * float_i * glm::sin(2.0f * glm::sqrt(float_i)), 1.0f - 0.01f * float_i)
+        );
+    }
+    memcpy(uniformBuffersMapped[currentImage], instances.data(), sizeof(InstanceData) * INSTANCE_COUNT);
 }
 
 void HelloTriangle::createDescriptorPool() {
@@ -458,7 +479,7 @@ void HelloTriangle::createDescriptorSets() {
         vk::DescriptorBufferInfo bufferInfo{
             .buffer = uniformBuffers[i],
             .offset = 0,
-            .range = sizeof(UniformBufferObject)
+            .range = sizeof(InstanceData) * INSTANCE_COUNT
         };
 
         vk::DescriptorImageInfo  imageInfo{
@@ -487,7 +508,7 @@ void HelloTriangle::createDescriptorSets() {
 void HelloTriangle::createTextureImage()
 {
     int            texWidth, texHeight, texChannels;
-    stbi_uc       *pixels    = stbi_load("cat.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    stbi_uc       *pixels    = stbi_load("boxtexture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
     vk::DeviceSize imageSize = texWidth * texHeight * 4;
 
     if (!pixels)
