@@ -10,8 +10,8 @@
 #include "Vertex.hpp"
 
 
-constexpr uint32_t WIDTH = 800;
-constexpr uint32_t HEIGHT = 800;
+constexpr uint32_t WIDTH = 1200;
+constexpr uint32_t HEIGHT = 1000;
 constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
 class HelloTriangle {
@@ -40,6 +40,7 @@ private:
     void createCommandBuffer();
     void createDescriptorPool();
     void createDescriptorSets();
+    void createColorResources();
     void recordCommandBuffer(
         uint32_t                imageIndex
     );
@@ -67,7 +68,7 @@ private:
     void endSingleTimeCommands(vk::raii::CommandBuffer&&);
     void transitionImageLayout(vk::raii::CommandBuffer&, const vk::raii::Image&, vk::ImageLayout, vk::ImageLayout);
     void copyBufferToImage(vk::raii::CommandBuffer&, const vk::raii::Buffer&, vk::raii::Image&, uint32_t, uint32_t);
-    vk::raii::ImageView createImageView(vk::Image const&, vk::Format, vk::ImageAspectFlags);
+    vk::raii::ImageView createImageView(vk::Image const&, vk::Format, vk::ImageAspectFlags, uint32_t);
 
     // Main loop
     void mainLoop();
@@ -122,6 +123,14 @@ private:
     vk::raii::Image        depthImage       = nullptr;
     vk::raii::DeviceMemory depthImageMemory = nullptr;
     vk::raii::ImageView    depthImageView   = nullptr;
+
+    vk::raii::Image        colorImage       = nullptr;
+    vk::raii::DeviceMemory colorImageMemory = nullptr;
+    vk::raii::ImageView    colorImageView   = nullptr;
+
+    vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e8;
+
+
     const std::vector<Vertex> vertices = {
         // Front (+Z)
         {{-0.5f, -0.5f,  0.5f}, {1,0,0}, {0,0}},
@@ -174,6 +183,7 @@ private:
     float dist = 2.0f;
     float height = 2.0f;
 
+    uint32_t               mipLevels          = 0;
     vk::raii::Image        textureImage       = nullptr;
     vk::raii::DeviceMemory textureImageMemory = nullptr;
 

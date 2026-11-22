@@ -6,7 +6,6 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#include <thread>
 #include <chrono>
 
 void HelloTriangle::run() {
@@ -19,6 +18,10 @@ void HelloTriangle::run() {
 void HelloTriangle::mainLoop() {
 
     constexpr float ANGLE = 0.03f;
+
+    using clock = std::chrono::steady_clock;
+    auto fpsLastTime = clock::now();
+    int frameCount = 0;
 
 
     while(!glfwWindowShouldClose(window)) {
@@ -50,7 +53,21 @@ void HelloTriangle::mainLoop() {
 
         drawFrame();
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        // std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        // FPS counter
+        ++frameCount;
+        auto now = clock::now();
+        std::chrono::duration<double> elapsed = now - fpsLastTime;
+        if (elapsed.count() >= 1.0) {
+            double fps = frameCount / elapsed.count();
+            std::printf("FPS: %.1f (%.2f ms/frame)\n", fps, 1000.0 / fps);
+
+            std::string title = "Hello Triangle - " + std::to_string(static_cast<int>(fps + 0.5)) + " FPS";
+            glfwSetWindowTitle(window, title.c_str());
+
+            frameCount = 0;
+            fpsLastTime = now;
+        }
     }
 
     device.waitIdle();

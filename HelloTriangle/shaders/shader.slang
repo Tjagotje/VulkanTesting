@@ -4,18 +4,22 @@ struct VSInput {
     float2 inTexCoord;
 };
 
-struct InstanceData {
+struct PushData {
+    float4x4 viewproj;
+};
+
+struct Instance {
     float4x4 model;
-    float4x4 view;
-    float4x4 proj;
+}
+
+struct InstanceBlock {
+    Instance instances[100];
 };
 
-struct InstanceDataBuffer {
-    InstanceData instances[4];
-};
+[[vk::push_constant]] ConstantBuffer<PushData> pc;
+[[vk::binding(0, 0)]] ConstantBuffer<InstanceBlock> instances;
+[[vk::binding(1, 0)]] Sampler2D tex;
 
-[[vk::binding(0,0)]]
-ConstantBuffer<InstanceDataBuffer> idb;
 
 Sampler2D texture;
 
@@ -30,10 +34,10 @@ struct VSOutput
 VSOutput vertMain(VSInput input, uint instanceID: SV_InstanceID) {
     VSOutput output;
 
-    InstanceData idata = idb.instances[instanceID];
+    float4x4 model = instances.instances[instanceID].model;
 
     float4 pos = float4(input.inPos, 1.0f);
-    output.pos = mul(idata.proj, mul(idata.view, mul(idata.model, pos)));
+    output.pos = mul(pc.viewproj, mul(model, pos));
     output.fragColor = input.inColor;
     output.fragTexCoord = input.inTexCoord;
     return output;
@@ -41,5 +45,5 @@ VSOutput vertMain(VSInput input, uint instanceID: SV_InstanceID) {
 
 [shader("fragment")]
 float4 fragMain(VSOutput vertIn) : SV_TARGET {
-   return texture.Sample(vertIn.fragTexCoord);
+    return tex.Sample(vertIn.fragTexCoord);
 }

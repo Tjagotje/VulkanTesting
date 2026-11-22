@@ -3,8 +3,7 @@
 #include "vulkan/vulkan.hpp"
 #include <glm/ext/matrix_transform.hpp>
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
+
 
 #include <cstdint>
 #include <glm/ext/matrix_clip_space.hpp>
@@ -16,7 +15,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-const uint INSTANCE_COUNT = 40;
+const uint INSTANCE_COUNT = 100;
 
 static std::vector<char> readFile(const std::string& filename) {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
@@ -108,10 +107,11 @@ void HelloTriangle::createGraphicsPipeline() {
         .lineWidth               = 1.0f
     };
 
-    // Multisampling turned off
+    // Multisampling turned on!
     vk::PipelineMultisampleStateCreateInfo multisampling{
-        .rasterizationSamples = vk::SampleCountFlagBits::e1,
-        .sampleShadingEnable = vk::False
+        .rasterizationSamples = msaaSamples,
+        .sampleShadingEnable = vk::True,
+        .minSampleShading = 0.95f
     };
 
     // Color blending (alpha)
@@ -129,10 +129,19 @@ void HelloTriangle::createGraphicsPipeline() {
         .logicOpEnable = vk::False, .logicOp = vk::LogicOp::eCopy, .attachmentCount = 1, .pAttachments = &colorBlendAttachment
     };
 
+    // pushconstants
+    vk::PushConstantRange pushRange{
+        .stageFlags = vk::ShaderStageFlagBits::eVertex,
+        .offset     = 0,
+        .size       = sizeof(PushData)
+    };
+
+
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
         .setLayoutCount = 1,
         .pSetLayouts = &*descriptorSetLayout,
-        .pushConstantRangeCount = 0
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = &pushRange
     };
     pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
 
@@ -219,12 +228,27 @@ void HelloTriangle::recordCommandBuffer(uint32_t imageIndex) {
         vk::ImageAspectFlagBits::eDepth
     );
 
+    transition_image_layout(
+        &*colorImage,
+        vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eColorAttachmentOptimal,
+        vk::AccessFlagBits2::eColorAttachmentWrite,
+        vk::AccessFlagBits2::eColorAttachmentWrite,
+        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        vk::ImageAspectFlagBits::eColor
+    );
+
+
     vk::ClearValue  clearColor = vk::ClearColorValue(0.1f, 0.1f, 0.1f, 1.0f);
     vk::ClearValue  clearDepth = vk::ClearDepthStencilValue(1.0f, 0);
 
     vk::RenderingAttachmentInfo attachmentInfo = {
-        .imageView   = swapChainImageViews[imageIndex],
+        .imageView = colorImageView,
         .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+        .resolveMode = vk::ResolveModeFlagBits::eAverage,
+        .resolveImageView = swapChainImageViews[imageIndex],
+        .resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal,
         .loadOp      = vk::AttachmentLoadOp::eClear,
         .storeOp     = vk::AttachmentStoreOp::eStore,
         .clearValue  = clearColor
@@ -259,6 +283,21 @@ void HelloTriangle::recordCommandBuffer(uint32_t imageIndex) {
 
     commandBuffer.bindVertexBuffers(0, *vertexBuffer, {0});
     commandBuffer.bindIndexBuffer(*indexBuffer, 0, vk::IndexType::eUint16);
+
+    glm::mat4 view = glm::lookAt(eye_pos, glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    glm::mat4 proj = glm::perspective(
+        glm::radians(45.0f),
+        static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height),
+        0.1f, 100.0f);
+
+    PushData pc{ .viewproj = view * proj };
+
+    commandBuffer.pushConstants<PushData>(
+        *pipelineLayout,
+        vk::ShaderStageFlagBits::eVertex,
+        0,
+        pc
+    );
 
     commandBuffers[frameIndex].bindDescriptorSets(
         vk::PipelineBindPoint::eGraphics,
@@ -347,13 +386,21 @@ std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> HelloTriangle::createBuffer(
     vk::BufferUsageFlags usage,
     vk::MemoryPropertyFlags properties
 ){
-  vk::BufferCreateInfo   bufferInfo{.size = size, .usage = usage, .sharingMode = vk::SharingMode::eExclusive};
-  vk::raii::Buffer       buffer          = vk::raii::Buffer(device, bufferInfo);
-  vk::MemoryRequirements memRequirements = buffer.getMemoryRequirements();
-  vk::MemoryAllocateInfo allocInfo{.allocationSize = memRequirements.size, .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties)};
-  vk::raii::DeviceMemory bufferMemory = vk::raii::DeviceMemory(device, allocInfo);
-  buffer.bindMemory(*bufferMemory, 0);
-  return {std::move(buffer), std::move(bufferMemory)};
+    vk::BufferCreateInfo   bufferInfo{.size = size, .usage = usage, .sharingMode = vk::SharingMode::eExclusive};
+    vk::raii::Buffer       buffer          = vk::raii::Buffer(device, bufferInfo);
+    vk::MemoryRequirements memRequirements = buffer.getMemoryRequirements();
+
+    vk::MemoryAllocateFlagsInfo flagsInfo{
+        .flags = vk::MemoryAllocateFlagBits::eDeviceAddress};
+
+    vk::MemoryAllocateInfo allocInfo{
+        .pNext = (usage & vk::BufferUsageFlagBits::eShaderDeviceAddress) ? &flagsInfo : nullptr,
+        .allocationSize = memRequirements.size,
+        .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties)};
+
+    vk::raii::DeviceMemory bufferMemory = vk::raii::DeviceMemory(device, allocInfo);
+    buffer.bindMemory(*bufferMemory, 0);
+    return {std::move(buffer), std::move(bufferMemory)};
 }
 
 
@@ -431,21 +478,22 @@ void HelloTriangle::updateUniformBuffer(uint32_t currentImage)
 
     std::vector<InstanceData> instances(INSTANCE_COUNT);
 
-    glm::mat4 view = lookAt(eye_pos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    glm::mat4 proj = glm::perspective(
-        glm::radians(45.0f),
-        static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height),
-        0.1f,
-        100.0f);
-    InstanceData default_instance = {.model = glm::mat4(1.0f), .view = view, .proj = proj};
-
     for(int i = 0; i < INSTANCE_COUNT; ++i){
-        instances[i] = default_instance;
         float float_i = (float) i;
-        instances[i].model = glm::translate(glm::mat4(1.0f), glm::vec3(
-            0.5f * float_i * glm::cos(2.0f * glm::sqrt(float_i)), 0.5f * float_i * glm::sin(2.0f * glm::sqrt(float_i)), 1.0f - 0.01f * float_i)
-        );
+        float theta = 2 * glm::pi<float>() * float_i / ( (float) INSTANCE_COUNT);
+
+        instances[i] = {
+            glm::translate(
+                glm::mat4(1.0f),
+                glm::vec3(
+                    4.0f * glm::pow(glm::sin(theta), 3.0f),
+                    0.25f * ( 13.0f * glm::cos(theta) - 5.0f * glm::cos(2*theta) - 2.0f * glm::cos(3 * theta) - glm::cos(theta)),
+                    1.0f - 0.001f * float_i
+                )
+            )
+        };
     }
+
     memcpy(uniformBuffersMapped[currentImage], instances.data(), sizeof(InstanceData) * INSTANCE_COUNT);
 }
 
@@ -505,57 +553,6 @@ void HelloTriangle::createDescriptorSets() {
     }
 }
 
-void HelloTriangle::createTextureImage()
-{
-    int            texWidth, texHeight, texChannels;
-    stbi_uc       *pixels    = stbi_load("boxtexture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-    vk::DeviceSize imageSize = texWidth * texHeight * 4;
-
-    if (!pixels)
-    {
-        throw std::runtime_error("failed to load texture image!");
-    }
-
-    auto [stagingBuffer, stagingBufferMemory] = createBuffer(
-        imageSize,
-        vk::BufferUsageFlagBits::eTransferSrc,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
-    );
-
-    void* data = stagingBufferMemory.mapMemory(0, imageSize);
-    memcpy(data, pixels, imageSize);
-    stagingBufferMemory.unmapMemory();
-    stbi_image_free(pixels);
-    
-    vk::ImageCreateInfo imageInfo{
-        .imageType   = vk::ImageType::e2D,
-        .format      = vk::Format::eR8G8B8A8Srgb,
-        .extent      = {static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), 1},
-        .mipLevels   = 1,
-        .arrayLayers = 1,
-        .samples     = vk::SampleCountFlagBits::e1,
-        .tiling      = vk::ImageTiling::eOptimal,
-        .usage       = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-        .sharingMode = vk::SharingMode::eExclusive
-    };
-
-    textureImage = vk::raii::Image(device, imageInfo);
-    vk::MemoryRequirements memRequirements = textureImage.getMemoryRequirements();
-    vk::MemoryAllocateInfo allocInfo{
-        .allocationSize  = memRequirements.size,
-        .memoryTypeIndex = findMemoryType(
-            memRequirements.memoryTypeBits,
-            vk::MemoryPropertyFlagBits::eDeviceLocal)
-        };
-    textureImageMemory = vk::raii::DeviceMemory(device, allocInfo);
-    textureImage.bindMemory(textureImageMemory, 0);
-
-    vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands();
-    transitionImageLayout(commandBuffer, textureImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
-    copyBufferToImage(commandBuffer, stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
-    transitionImageLayout(commandBuffer, textureImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
-    endSingleTimeCommands(std::move(commandBuffer));
-}
 
 void HelloTriangle::transitionImageLayout(
     vk::raii::CommandBuffer &commandBuffer,
@@ -571,7 +568,7 @@ void HelloTriangle::transitionImageLayout(
         .image               = image,
         .subresourceRange    = {
             .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .levelCount = 1,
+            .levelCount = mipLevels,
             .layerCount = 1
         }
     };

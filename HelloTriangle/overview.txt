@@ -1,0 +1,65 @@
+
+
+INITIALIZATION
+
+initWindow() = glfw window
+
+initVulkan()
+    General Device Setup
+    * createInstance() = setup vulkan (enable extensions & debug)
+    * createSurface() = creates window surface compatable with vulkan
+    * createDevice() = selects device, enables features, selects queue
+
+    Swapchain
+    * createSwapChain() = selects right format, creates swapchain and gets images
+    * createImageViews() = generates image views for swapchain 
+
+    Graphics pipeline
+    * createDescriptorSetLayout() = binding 0 at vertex shaders, binding 1 at fragment shaders    (replace with heap???)
+    * createGraphicsPipeline() 
+        * read & assign shader,
+        * allocate dynamic states (viewport & scissor)
+        * vertex input from vertex binding description
+        * assembly info
+        * set viewport & scissor
+        * set default rasterization
+        * enable multisampling
+        * colourblend alpha
+        * bind descriptorset layout
+        * bind depth stencil
+    * createCommandPool() = allocate 1 commandpool for the buffer
+    
+    ------ resources
+    * createColorResources() = colour image with multiple samples  (needs to be bound to memory and memory cannot be destroyed...)
+    * createDepthResources() = depth image 
+    * createTextureImage() = loads image, transports, (generates mips), transitions layout 
+    * createTextureSampler() = creates sampler (anisotropy and mipmaps)
+
+    * createVertexBuffer() = moves data through staging buffer
+    * createIndexBuffer() = " ... "
+    * createUniformBuffers() = creates one uniform bufer for each frame in flight (as non-constant)
+    * updateUniformBuffer(frame) = moves data to uniform buffer (in host-visible part of memory!)
+
+    * createDescriptorPool() = Allocates space for linking to uniform buffer & sampler (one per frame-in-flight)
+    * createDescriptorSets() = tells shaders where to find the data (raw buffers & samplers)
+
+    * createCommandBuffer() = allocate 1 command buffer for every frame in flight
+    * createSyncObjects() 
+        * renderFinishedSemaphore for each swapchain image
+        * presentCompleteSemaphore for each frame in flight
+        * inFlightFence for each frame in flight
+
+
+drawFrame()
+    * wait for inFlightFence for current frame
+    * acquire next swapChain image based on presentCompleteSemaphore
+    * recordCommandBuffer()
+        * begin rendering
+        * bind pipeline
+        * set viewport & scissors
+        * bind descriptorsets
+        * drawIndexed
+        * endRendering
+        * transition image layout
+    * updateUniformBuffer
+    

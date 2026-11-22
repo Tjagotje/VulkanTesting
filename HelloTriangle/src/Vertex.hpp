@@ -24,9 +24,11 @@ struct Vertex{
     }
 };
 
-struct InstanceData
-{
+struct InstanceData{
     glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 proj;
+};
+
+struct PushData{
+  glm::mat4 viewproj;
+  vk::DeviceAddress instances;
 };

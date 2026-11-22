@@ -4,6 +4,9 @@
 #include <iostream>
 #include <vulkan/vulkan_raii.hpp>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 const std::vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
 };
@@ -25,9 +28,9 @@ void HelloTriangle::initVulkan() {
     createDescriptorSetLayout();
     createGraphicsPipeline();
     createCommandPool();
+    createColorResources();
     createDepthResources();
     createTextureImage();
-    createTextureImageView();
     createTextureSampler();
     createVertexBuffer();
     createIndexBuffer();
@@ -100,6 +103,12 @@ void HelloTriangle::createDevice() {
         vk::KHRSwapchainExtensionName
     };
 
+
+    auto properties = physicalDevice.getProperties();
+
+    std::cout << "Max UBO range: "
+          << properties.limits.maxUniformBufferRange << '\n';
+
     // find the index of the first queue family that supports graphics
     std::vector<vk::QueueFamilyProperties> queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
 
@@ -120,25 +129,28 @@ void HelloTriangle::createDevice() {
     }
 
     // query for Vulkan 1.3 features
-    vk::StructureChain<vk::PhysicalDeviceFeatures2,
-                        vk::PhysicalDeviceVulkan11Features,
-                        vk::PhysicalDeviceVulkan13Features,
-                        vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
-        featureChain = {
-            {.features = {.samplerAnisotropy = true } },                                    // vk::PhysicalDeviceFeatures2
-            {.shaderDrawParameters = true},        // vk::PhysicalDeviceVulkan11Features
-            {.synchronization2 = true, .dynamicRendering = true},            // vk::PhysicalDeviceVulkan13Features
-            {.extendedDynamicState = true}         // vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
-        };
+    vk::StructureChain<
+        vk::PhysicalDeviceFeatures2,
+        vk::PhysicalDeviceVulkan11Features,
+        vk::PhysicalDeviceVulkan13Features,
+        vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
+    > featureChain = {
+        {.features = {.sampleRateShading = true, .samplerAnisotropy = true}},
+        {.shaderDrawParameters = true},
+        {.synchronization2 = true, .dynamicRendering = true},
+        {.extendedDynamicState = true}
+    };
 
     // create a Device
     float                     queuePriority = 0.5f;
     vk::DeviceQueueCreateInfo deviceQueueCreateInfo{.queueFamilyIndex = queueIndex, .queueCount = 1, .pQueuePriorities = &queuePriority};
-    vk::DeviceCreateInfo      deviceCreateInfo{.pNext                   = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
-                                                .queueCreateInfoCount    = 1,
-                                                .pQueueCreateInfos       = &deviceQueueCreateInfo,
-                                                .enabledExtensionCount   = static_cast<uint32_t>(requiredDeviceExtension.size()),
-                                                .ppEnabledExtensionNames = requiredDeviceExtension.data()};
+    vk::DeviceCreateInfo      deviceCreateInfo{
+        .pNext                   = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
+        .queueCreateInfoCount    = 1,
+        .pQueueCreateInfos       = &deviceQueueCreateInfo,
+        .enabledExtensionCount   = static_cast<uint32_t>(requiredDeviceExtension.size()),
+        .ppEnabledExtensionNames = requiredDeviceExtension.data()
+    };
 
     device = vk::raii::Device( physicalDevice, deviceCreateInfo );
     queue  = vk::raii::Queue(device, queueIndex, 0);
@@ -171,7 +183,7 @@ void HelloTriangle::createSwapChain() {
         .imageSharingMode = vk::SharingMode::eExclusive,
         .preTransform     = surfaceCapabilities.currentTransform,
         .compositeAlpha   = vk::CompositeAlphaFlagBitsKHR::eOpaque,
-        .presentMode      = vk::PresentModeKHR::eFifo,
+        .presentMode      = vk::PresentModeKHR::eImmediate,
         .clipped          = true
     };
     swapChain       = vk::raii::SwapchainKHR( device, swapChainCreateInfo );
@@ -185,7 +197,7 @@ void HelloTriangle::createImageViews(){
   swapChainImageViews.reserve(swapChainImages.size());
   for ( auto &image: swapChainImages )
   {
-    swapChainImageViews.emplace_back(createImageView(image, swapChainSurfaceFormat.format,  vk::ImageAspectFlagBits::eColor));
+    swapChainImageViews.emplace_back(createImageView(image, swapChainSurfaceFormat.format,  vk::ImageAspectFlagBits::eColor, 1));
   }
 }
 
@@ -222,19 +234,155 @@ void HelloTriangle::endSingleTimeCommands(vk::raii::CommandBuffer &&commandBuffe
   queue.waitIdle();
 }
 
-vk::raii::ImageView HelloTriangle::createImageView(vk::Image const &image, vk::Format format, vk::ImageAspectFlags aspectFlags) {
+vk::raii::ImageView HelloTriangle::createImageView(
+    vk::Image const &image,
+    vk::Format format,
+    vk::ImageAspectFlags aspectFlags,
+    uint32_t mipLevels
+) {
     vk::ImageViewCreateInfo viewInfo{
         .image            = image,
         .viewType         = vk::ImageViewType::e2D,
         .format           = format,
-        .subresourceRange = {.aspectMask = aspectFlags, .baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1}
+        .subresourceRange = {.aspectMask = aspectFlags, .levelCount = mipLevels, .layerCount = 1}
     };
 
     return vk::raii::ImageView(device, viewInfo);
 }
 
-void HelloTriangle::createTextureImageView() {
-    textureImageView = createImageView(*textureImage, vk::Format::eR8G8B8A8Srgb,  vk::ImageAspectFlagBits::eColor);
+
+void HelloTriangle::createTextureImage()
+{
+    int            texWidth, texHeight, texChannels;
+    stbi_uc       *pixels    = stbi_load("cat.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    vk::DeviceSize imageSize = texWidth * texHeight * 4;
+
+    if (!pixels)
+    {
+        throw std::runtime_error("failed to load texture image!");
+    }
+
+    mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
+
+    std::cout << "Mip Levels = " << mipLevels << std::endl;
+
+    //mipLevels = 1;
+
+    auto [stagingBuffer, stagingBufferMemory] = createBuffer(
+        imageSize,
+        vk::BufferUsageFlagBits::eTransferSrc,
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+    );
+
+    void* data = stagingBufferMemory.mapMemory(0, imageSize);
+    memcpy(data, pixels, imageSize);
+    stagingBufferMemory.unmapMemory();
+    stbi_image_free(pixels);
+    
+    vk::ImageCreateInfo imageInfo{
+        .imageType   = vk::ImageType::e2D,
+        .format      = vk::Format::eR8G8B8A8Srgb,
+        .extent      = {static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), 1},
+        .mipLevels   = mipLevels,
+        .arrayLayers = 1,
+        .samples     = vk::SampleCountFlagBits::e1,
+        .tiling      = vk::ImageTiling::eOptimal,
+        .usage       = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc,
+        .sharingMode = vk::SharingMode::eExclusive
+    };
+
+    textureImage = vk::raii::Image(device, imageInfo);
+    vk::MemoryRequirements memRequirements = textureImage.getMemoryRequirements();
+    vk::MemoryAllocateInfo allocInfo{
+        .allocationSize  = memRequirements.size,
+        .memoryTypeIndex = findMemoryType(
+            memRequirements.memoryTypeBits,
+            vk::MemoryPropertyFlagBits::eDeviceLocal)
+        };
+    textureImageMemory = vk::raii::DeviceMemory(device, allocInfo);
+    textureImage.bindMemory(textureImageMemory, 0);
+
+    vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands();
+    transitionImageLayout(commandBuffer, textureImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
+    copyBufferToImage(commandBuffer, stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
+
+    // mipMaps
+
+    vk::ImageMemoryBarrier barrier = {
+        .srcAccessMask       = vk::AccessFlagBits::eTransferWrite,
+        .dstAccessMask       = vk::AccessFlagBits::eTransferRead,
+        .oldLayout           = vk::ImageLayout::eTransferDstOptimal,
+        .newLayout           = vk::ImageLayout::eTransferSrcOptimal,
+        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .image               = textureImage,
+        .subresourceRange    = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1}
+    };
+
+    int32_t mipWidth  = texWidth;
+    int32_t mipHeight = texHeight;
+
+    for (uint32_t i = 1; i < mipLevels; i++) {
+        barrier.subresourceRange.baseMipLevel = i - 1;
+        barrier.oldLayout                     = vk::ImageLayout::eTransferDstOptimal;
+        barrier.newLayout                     = vk::ImageLayout::eTransferSrcOptimal;
+        barrier.srcAccessMask                 = vk::AccessFlagBits::eTransferWrite;
+        barrier.dstAccessMask                 = vk::AccessFlagBits::eTransferRead;
+
+        commandBuffer.pipelineBarrier(
+            vk::PipelineStageFlagBits::eTransfer,
+            vk::PipelineStageFlagBits::eTransfer,
+            {},
+            {},
+            {},
+            barrier
+        );
+
+        vk::ImageBlit blit = {
+            .srcSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = i - 1, .layerCount = 1},
+            .srcOffsets     = std::array<vk::Offset3D, 2>({{}, {mipWidth, mipHeight, 1}}),
+            .dstSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = i, .layerCount = 1},
+            .dstOffsets     = std::array<vk::Offset3D, 2>({{}, {1 < mipWidth ? mipWidth / 2 : 1, 1 < mipHeight ? mipHeight / 2 : 1, 1}})
+        };
+
+        commandBuffer.blitImage(
+            textureImage, 
+            vk::ImageLayout::eTransferSrcOptimal, 
+            textureImage, 
+            vk::ImageLayout::eTransferDstOptimal, 
+            blit, 
+            vk::Filter::eLinear
+        );
+
+        barrier.oldLayout     = vk::ImageLayout::eTransferSrcOptimal;
+        barrier.newLayout     = vk::ImageLayout::eShaderReadOnlyOptimal;
+        barrier.srcAccessMask = vk::AccessFlagBits::eTransferRead;
+        barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+
+        commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, barrier);
+    
+        if (1 < mipWidth) {
+            mipWidth /= 2;
+        } if (1 < mipHeight) {
+            mipHeight /= 2;
+        }
+    }
+
+    barrier.subresourceRange.baseMipLevel = mipLevels - 1;
+    barrier.oldLayout                     = vk::ImageLayout::eTransferDstOptimal;
+    barrier.newLayout                     = vk::ImageLayout::eShaderReadOnlyOptimal;
+    barrier.srcAccessMask                 = vk::AccessFlagBits::eTransferWrite;
+    barrier.dstAccessMask                 = vk::AccessFlagBits::eShaderRead;
+
+    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, barrier);
+
+    
+    // End of mipmap generation!
+
+    endSingleTimeCommands(std::move(commandBuffer));
+
+    textureImageView = createImageView(*textureImage, vk::Format::eR8G8B8A8Srgb,  vk::ImageAspectFlagBits::eColor, mipLevels);
+
 }
 
 void HelloTriangle::createTextureSampler() {
@@ -246,13 +394,12 @@ void HelloTriangle::createTextureSampler() {
         .addressModeU     = vk::SamplerAddressMode::eRepeat,
         .addressModeV     = vk::SamplerAddressMode::eRepeat,
         .addressModeW     = vk::SamplerAddressMode::eRepeat,
+        .mipLodBias       = 0.0f,
         .anisotropyEnable = vk::True,
-        .maxAnisotropy    = properties.limits.maxSamplerAnisotropy
+        .maxAnisotropy    = properties.limits.maxSamplerAnisotropy,
+        .minLod           = 0.0f,
+        .maxLod           = static_cast<float>(mipLevels - 1)
     };
-
-    samplerInfo.mipLodBias = 0.0f;
-    samplerInfo.minLod = 0.0f;
-    samplerInfo.maxLod = 0.0f;
 
     textureSampler = vk::raii::Sampler(device, samplerInfo);
 }
@@ -264,7 +411,7 @@ void HelloTriangle::createDepthResources() {
         .extent      = {swapChainExtent.width, swapChainExtent.height, 1},
         .mipLevels   = 1,
         .arrayLayers = 1,
-        .samples     = vk::SampleCountFlagBits::e1,
+        .samples     = msaaSamples,
         .tiling      = vk::ImageTiling::eOptimal,
         .usage       = vk::ImageUsageFlagBits::eDepthStencilAttachment,
         .sharingMode = vk::SharingMode::eExclusive
@@ -281,5 +428,34 @@ void HelloTriangle::createDepthResources() {
     depthImageMemory = vk::raii::DeviceMemory(device, allocInfo);
     depthImage.bindMemory(depthImageMemory, 0);
 
-    depthImageView  = createImageView(depthImage, vk::Format::eD32Sfloat, vk::ImageAspectFlagBits::eDepth);
+    depthImageView  = createImageView(depthImage, vk::Format::eD32Sfloat, vk::ImageAspectFlagBits::eDepth, 1);
+}
+
+void HelloTriangle::createColorResources() {
+    vk::Format colorFormat = swapChainSurfaceFormat.format;
+
+    vk::ImageCreateInfo imageInfo{
+        .imageType   = vk::ImageType::e2D,
+        .format      = colorFormat,
+        .extent      = {swapChainExtent.width, swapChainExtent.height, 1},
+        .mipLevels   = 1,
+        .arrayLayers = 1,
+        .samples     = msaaSamples,
+        .tiling      = vk::ImageTiling::eOptimal,
+        .usage       = vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,
+        .sharingMode = vk::SharingMode::eExclusive
+    };
+    colorImage = vk::raii::Image(device, imageInfo);
+
+    vk::MemoryRequirements memRequirements = colorImage.getMemoryRequirements();
+    vk::MemoryAllocateInfo allocInfo{
+        .allocationSize  = memRequirements.size,
+        .memoryTypeIndex = findMemoryType(
+            memRequirements.memoryTypeBits,
+            vk::MemoryPropertyFlagBits::eDeviceLocal)
+        };
+    colorImageMemory = vk::raii::DeviceMemory(device, allocInfo);
+    colorImage.bindMemory(colorImageMemory, 0);
+
+    colorImageView                         = createImageView(colorImage, colorFormat, vk::ImageAspectFlagBits::eColor, 1);
 }
