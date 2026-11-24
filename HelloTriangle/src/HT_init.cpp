@@ -2,6 +2,7 @@
 #include "vulkan/vulkan.hpp"
 #include <vulkan/vulkan.hpp>
 #include <iostream>
+#include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_raii.hpp>
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -23,6 +24,7 @@ void HelloTriangle::initVulkan() {
     createInstance();
     createSurface();
     createDevice();
+    createVMA();
     createSwapChain();
     createImageViews();
     createDescriptorSetLayout();
@@ -35,8 +37,6 @@ void HelloTriangle::initVulkan() {
     createVertexBuffer();
     createIndexBuffer();
     createUniformBuffers();
-    createDescriptorPool();
-    createDescriptorSets();
     createCommandBuffer();
     createSyncObjects();
 }
@@ -100,7 +100,13 @@ void HelloTriangle::createSurface() {
 void HelloTriangle::createDevice() {
     physicalDevice = instance.enumeratePhysicalDevices()[0];
     std::vector<const char*> requiredDeviceExtension = {
-        vk::KHRSwapchainExtensionName
+        vk::KHRSwapchainExtensionName,
+        vk::KHRPushDescriptorExtensionName,
+        // for VMA
+        vk::KHRDedicatedAllocationExtensionName,
+        vk::KHRBindMemory2ExtensionName,
+        vk::EXTMemoryBudgetExtensionName,
+        vk::KHRBufferDeviceAddressExtensionName
     };
 
 
@@ -132,11 +138,13 @@ void HelloTriangle::createDevice() {
     vk::StructureChain<
         vk::PhysicalDeviceFeatures2,
         vk::PhysicalDeviceVulkan11Features,
+        vk::PhysicalDeviceVulkan12Features,
         vk::PhysicalDeviceVulkan13Features,
         vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT
     > featureChain = {
         {.features = {.sampleRateShading = true, .samplerAnisotropy = true}},
         {.shaderDrawParameters = true},
+        {.bufferDeviceAddress = true},
         {.synchronization2 = true, .dynamicRendering = true},
         {.extendedDynamicState = true}
     };
@@ -154,6 +162,25 @@ void HelloTriangle::createDevice() {
 
     device = vk::raii::Device( physicalDevice, deviceCreateInfo );
     queue  = vk::raii::Queue(device, queueIndex, 0);
+}
+
+void HelloTriangle::createVMA() {
+    VmaAllocatorCreateFlags flags = 
+        VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT |
+        VMA_ALLOCATOR_CREATE_KHR_BIND_MEMORY2_BIT |
+        VMA_ALLOCATOR_CREATE_KHR_EXTENDED_FLAGS_BIT |
+        VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT |
+        VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+
+    VmaAllocatorCreateInfo allocatorCreateInfo {
+        .flags = flags,
+        .physicalDevice = *physicalDevice,
+        .device = *device,
+        .instance = *instance,
+        .vulkanApiVersion = VK_API_VERSION_1_4,
+    };
+
+    vmaCreateAllocator(&allocatorCreateInfo, &allocator);
 }
 
 
@@ -303,40 +330,40 @@ void HelloTriangle::createTextureImage()
     textureImage.bindMemory(textureImageMemory, 0);
 
     vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands();
-    transitionImageLayout(commandBuffer, textureImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
+    vk::ImageMemoryBarrier2 barrier{
+        .srcStageMask        = vk::PipelineStageFlagBits2::eNone,
+        .srcAccessMask       = vk::AccessFlagBits2::eNone,
+        .dstStageMask        = vk::PipelineStageFlagBits2::eCopy,
+        .dstAccessMask       = vk::AccessFlagBits2::eTransferWrite,
+        .oldLayout           = vk::ImageLayout::eUndefined,
+        .newLayout           = vk::ImageLayout::eGeneral,
+        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .image               = *textureImage,
+        .subresourceRange = {vk::ImageAspectFlagBits::eColor,
+            0, mipLevels,
+            0, 1}
+    };
+    commandBuffer.pipelineBarrier2(vk::DependencyInfo{ .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier });
     copyBufferToImage(commandBuffer, stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
 
     // mipMaps
 
-    vk::ImageMemoryBarrier barrier = {
-        .srcAccessMask       = vk::AccessFlagBits::eTransferWrite,
-        .dstAccessMask       = vk::AccessFlagBits::eTransferRead,
-        .oldLayout           = vk::ImageLayout::eTransferDstOptimal,
-        .newLayout           = vk::ImageLayout::eTransferSrcOptimal,
-        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .image               = textureImage,
-        .subresourceRange    = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1}
-    };
+    barrier.srcStageMask = vk::PipelineStageFlagBits2::eBlit;
+    barrier.dstStageMask = vk::PipelineStageFlagBits2::eBlit;
+    barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
+    barrier.dstAccessMask = vk::AccessFlagBits2::eTransferRead;
+    barrier.oldLayout = vk::ImageLayout::eGeneral;
 
     int32_t mipWidth  = texWidth;
     int32_t mipHeight = texHeight;
 
     for (uint32_t i = 1; i < mipLevels; i++) {
-        barrier.subresourceRange.baseMipLevel = i - 1;
-        barrier.oldLayout                     = vk::ImageLayout::eTransferDstOptimal;
-        barrier.newLayout                     = vk::ImageLayout::eTransferSrcOptimal;
-        barrier.srcAccessMask                 = vk::AccessFlagBits::eTransferWrite;
-        barrier.dstAccessMask                 = vk::AccessFlagBits::eTransferRead;
+        barrier.subresourceRange = {
+            vk::ImageAspectFlagBits::eColor, i-1, 1, 0, 1
+        };
 
-        commandBuffer.pipelineBarrier(
-            vk::PipelineStageFlagBits::eTransfer,
-            vk::PipelineStageFlagBits::eTransfer,
-            {},
-            {},
-            {},
-            barrier
-        );
+        commandBuffer.pipelineBarrier2(vk::DependencyInfo{ .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier });
 
         vk::ImageBlit blit = {
             .srcSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = i - 1, .layerCount = 1},
@@ -345,21 +372,18 @@ void HelloTriangle::createTextureImage()
             .dstOffsets     = std::array<vk::Offset3D, 2>({{}, {1 < mipWidth ? mipWidth / 2 : 1, 1 < mipHeight ? mipHeight / 2 : 1, 1}})
         };
 
+        if (i == mipLevels - 1) {
+            continue;
+        }
+
         commandBuffer.blitImage(
             textureImage, 
-            vk::ImageLayout::eTransferSrcOptimal, 
+            vk::ImageLayout::eGeneral, 
             textureImage, 
-            vk::ImageLayout::eTransferDstOptimal, 
+            vk::ImageLayout::eGeneral, 
             blit, 
             vk::Filter::eLinear
         );
-
-        barrier.oldLayout     = vk::ImageLayout::eTransferSrcOptimal;
-        barrier.newLayout     = vk::ImageLayout::eShaderReadOnlyOptimal;
-        barrier.srcAccessMask = vk::AccessFlagBits::eTransferRead;
-        barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-
-        commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, barrier);
     
         if (1 < mipWidth) {
             mipWidth /= 2;
@@ -368,13 +392,13 @@ void HelloTriangle::createTextureImage()
         }
     }
 
-    barrier.subresourceRange.baseMipLevel = mipLevels - 1;
-    barrier.oldLayout                     = vk::ImageLayout::eTransferDstOptimal;
-    barrier.newLayout                     = vk::ImageLayout::eShaderReadOnlyOptimal;
-    barrier.srcAccessMask                 = vk::AccessFlagBits::eTransferWrite;
-    barrier.dstAccessMask                 = vk::AccessFlagBits::eShaderRead;
+    
+    barrier.srcAccessMask = vk::AccessFlagBits2::eTransferRead;
+    barrier.dstAccessMask = vk::AccessFlagBits2::eShaderSampledRead;
+    barrier.srcStageMask  = vk::PipelineStageFlagBits2::eBlit;
+    barrier.dstStageMask  = vk::PipelineStageFlagBits2::eFragmentShader; 
 
-    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, {}, {}, {}, barrier);
+    commandBuffer.pipelineBarrier2(vk::DependencyInfo{ .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier });
 
     
     // End of mipmap generation!
@@ -457,5 +481,5 @@ void HelloTriangle::createColorResources() {
     colorImageMemory = vk::raii::DeviceMemory(device, allocInfo);
     colorImage.bindMemory(colorImageMemory, 0);
 
-    colorImageView                         = createImageView(colorImage, colorFormat, vk::ImageAspectFlagBits::eColor, 1);
+    colorImageView                      = createImageView(colorImage, colorFormat, vk::ImageAspectFlagBits::eColor, 1);
 }

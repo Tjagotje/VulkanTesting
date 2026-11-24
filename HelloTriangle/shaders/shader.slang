@@ -6,22 +6,16 @@ struct VSInput {
 
 struct PushData {
     float4x4 viewproj;
+    Instance* instances;
 };
 
 struct Instance {
     float4x4 model;
-}
-
-struct InstanceBlock {
-    Instance instances[100];
 };
 
 [[vk::push_constant]] ConstantBuffer<PushData> pc;
-[[vk::binding(0, 0)]] ConstantBuffer<InstanceBlock> instances;
 [[vk::binding(1, 0)]] Sampler2D tex;
 
-
-Sampler2D texture;
 
 struct VSOutput
 {
@@ -34,7 +28,7 @@ struct VSOutput
 VSOutput vertMain(VSInput input, uint instanceID: SV_InstanceID) {
     VSOutput output;
 
-    float4x4 model = instances.instances[instanceID].model;
+    float4x4 model = pc.instances[instanceID].model;
 
     float4 pos = float4(input.inPos, 1.0f);
     output.pos = mul(pc.viewproj, mul(model, pos));

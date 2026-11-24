@@ -101,7 +101,7 @@ void HelloTriangle::createGraphicsPipeline() {
         .depthClampEnable        = vk::False,
         .rasterizerDiscardEnable = vk::False,
         .polygonMode             = vk::PolygonMode::eFill,
-        .cullMode                = vk::CullModeFlagBits::eNone,
+        .cullMode                = vk::CullModeFlagBits::eBack,
         .frontFace               = vk::FrontFace::eCounterClockwise,
         .depthBiasEnable         = vk::False,
         .lineWidth               = 1.0f
@@ -209,7 +209,7 @@ void HelloTriangle::recordCommandBuffer(uint32_t imageIndex) {
     transition_image_layout(
         &swapChainImages[imageIndex],
         vk::ImageLayout::eUndefined,
-        vk::ImageLayout::eColorAttachmentOptimal,
+        vk::ImageLayout::eGeneral,
         {},                                                        
         vk::AccessFlagBits2::eColorAttachmentWrite,                
         vk::PipelineStageFlagBits2::eColorAttachmentOutput,        
@@ -220,7 +220,7 @@ void HelloTriangle::recordCommandBuffer(uint32_t imageIndex) {
     transition_image_layout(
         &*depthImage,
         vk::ImageLayout::eUndefined,
-        vk::ImageLayout::eDepthAttachmentOptimal,
+        vk::ImageLayout::eGeneral,
         vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
         vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
         vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
@@ -231,7 +231,7 @@ void HelloTriangle::recordCommandBuffer(uint32_t imageIndex) {
     transition_image_layout(
         &*colorImage,
         vk::ImageLayout::eUndefined,
-        vk::ImageLayout::eColorAttachmentOptimal,
+        vk::ImageLayout::eGeneral,
         vk::AccessFlagBits2::eColorAttachmentWrite,
         vk::AccessFlagBits2::eColorAttachmentWrite,
         vk::PipelineStageFlagBits2::eColorAttachmentOutput,
@@ -245,18 +245,18 @@ void HelloTriangle::recordCommandBuffer(uint32_t imageIndex) {
 
     vk::RenderingAttachmentInfo attachmentInfo = {
         .imageView = colorImageView,
-        .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+        .imageLayout = vk::ImageLayout::eGeneral,
         .resolveMode = vk::ResolveModeFlagBits::eAverage,
         .resolveImageView = swapChainImageViews[imageIndex],
-        .resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+        .resolveImageLayout = vk::ImageLayout::eGeneral,
         .loadOp      = vk::AttachmentLoadOp::eClear,
-        .storeOp     = vk::AttachmentStoreOp::eStore,
+        .storeOp     = vk::AttachmentStoreOp::eDontCare,
         .clearValue  = clearColor
     };
 
     vk::RenderingAttachmentInfo depthAttachmentInfo = {
         .imageView   = depthImageView,
-        .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+        .imageLayout = vk::ImageLayout::eGeneral,
         .loadOp      = vk::AttachmentLoadOp::eClear,
         .storeOp     = vk::AttachmentStoreOp::eDontCare,
         .clearValue  = clearDepth
@@ -290,7 +290,7 @@ void HelloTriangle::recordCommandBuffer(uint32_t imageIndex) {
         static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height),
         0.1f, 100.0f);
 
-    PushData pc{ .viewproj = view * proj };
+    PushData pc{ .viewproj = proj * view, .instances = uniformBufferAddresses[frameIndex] };
 
     commandBuffer.pushConstants<PushData>(
         *pipelineLayout,
@@ -299,13 +299,29 @@ void HelloTriangle::recordCommandBuffer(uint32_t imageIndex) {
         pc
     );
 
-    commandBuffers[frameIndex].bindDescriptorSets(
+    vk::DescriptorImageInfo imageInfo {
+        .sampler = *textureSampler,
+        .imageView = *textureImageView,
+        .imageLayout = vk::ImageLayout::eGeneral
+    };
+
+    vk::WriteDescriptorSet write{
+        .dstBinding       = 1,
+        .dstArrayElement  = 0,
+        .descriptorCount  = 1,
+        .descriptorType   = vk::DescriptorType::eCombinedImageSampler,
+        .pImageInfo       = &imageInfo
+    };
+
+
+    commandBuffer.pushDescriptorSet(
         vk::PipelineBindPoint::eGraphics,
-        pipelineLayout,
+        *pipelineLayout,
         0,
-        *descriptorSets[frameIndex],
-        nullptr
+        write
     );
+
+
     commandBuffer.drawIndexed(
         static_cast<uint32_t>(indices.size()),
         INSTANCE_COUNT,
@@ -319,7 +335,7 @@ void HelloTriangle::recordCommandBuffer(uint32_t imageIndex) {
     // After rendering, transition the swapchain image to vk::ImageLayout::ePresentSrcKHR
     transition_image_layout(
         &swapChainImages[imageIndex],
-        vk::ImageLayout::eColorAttachmentOptimal,
+        vk::ImageLayout::eGeneral,
         vk::ImageLayout::ePresentSrcKHR,
         vk::AccessFlagBits2::eColorAttachmentWrite,             // srcAccessMask
         {},                                                     // dstAccessMask
@@ -422,6 +438,15 @@ void HelloTriangle::createVertexBuffer() {
             vk::MemoryPropertyFlagBits::eDeviceLocal);
 
     copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
+
+    // newBuffer !!!
+    VmaAllocationCreateInfo allocCreateInfo;
+    auto _stagingBuffer = ht::Buffer(
+        allocator,
+        bufferSize,
+        vk::BufferUsageFlagBits::eTransferSrc,
+        { .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, .usage = VMA_MEMORY_USAGE_AUTO}
+    );
 }
 
 void HelloTriangle::createIndexBuffer() {
@@ -448,11 +473,20 @@ void HelloTriangle::copyBuffer(vk::raii::Buffer &srcBuffer, vk::raii::Buffer &ds
 }
 
 void HelloTriangle::createDescriptorSetLayout() {
-    std::array<vk::DescriptorSetLayoutBinding, 2> bindings{
-    {{.binding = 0, .descriptorType = vk::DescriptorType::eUniformBuffer, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eVertex},
-     {.binding = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment}}};
+    std::array<vk::DescriptorSetLayoutBinding, 1> bindings{{
+        {
+            .binding = 1,
+            .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eFragment
+        }
+    }};
 
-    vk::DescriptorSetLayoutCreateInfo layoutInfo{.bindingCount = static_cast<uint32_t>(bindings.size()), .pBindings = bindings.data()};
+    vk::DescriptorSetLayoutCreateInfo layoutInfo{
+        .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptor,
+        .bindingCount = static_cast<uint32_t>(bindings.size()),
+        .pBindings = bindings.data()
+    };
     descriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutInfo);
 }
 
@@ -461,10 +495,17 @@ void HelloTriangle::createUniformBuffers(){
     {
         vk::DeviceSize bufferSize = sizeof(InstanceData) * INSTANCE_COUNT;
         auto [buffer, bufferMem]  = createBuffer(
-            bufferSize, vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+            bufferSize,
+            vk::BufferUsageFlagBits::eShaderDeviceAddress, 
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+        );
+
+
+        uniformBufferAddresses[i] = device.getBufferAddress({.buffer = *buffer});
         uniformBuffers.emplace_back(std::move(buffer));
         uniformBuffersMemory.emplace_back(std::move(bufferMem));
         uniformBuffersMapped.emplace_back( uniformBuffersMemory.back().mapMemory(0, bufferSize));
+
     }
 }
 
@@ -497,68 +538,16 @@ void HelloTriangle::updateUniformBuffer(uint32_t currentImage)
     memcpy(uniformBuffersMapped[currentImage], instances.data(), sizeof(InstanceData) * INSTANCE_COUNT);
 }
 
-void HelloTriangle::createDescriptorPool() {
-    std::array<vk::DescriptorPoolSize, 2> poolSize{
-        {{.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = MAX_FRAMES_IN_FLIGHT},
-        {.type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = MAX_FRAMES_IN_FLIGHT}}};
-    vk::DescriptorPoolCreateInfo          poolInfo{
-        .flags         = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-        .maxSets       = MAX_FRAMES_IN_FLIGHT,
-        .poolSizeCount = static_cast<uint32_t>(poolSize.size()),
-        .pPoolSizes    = poolSize.data()};
-
-    descriptorPool = vk::raii::DescriptorPool(device, poolInfo);
-}
-
-void HelloTriangle::createDescriptorSets() {
-    std::vector<vk::DescriptorSetLayout> layouts(
-        MAX_FRAMES_IN_FLIGHT,
-        *descriptorSetLayout
-    );
-    vk::DescriptorSetAllocateInfo allocInfo{
-        .descriptorPool     = descriptorPool,
-        .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
-        .pSetLayouts        = layouts.data()
-    };
-
-    descriptorSets = device.allocateDescriptorSets(allocInfo);
-
-    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++){
-        vk::DescriptorBufferInfo bufferInfo{
-            .buffer = uniformBuffers[i],
-            .offset = 0,
-            .range = sizeof(InstanceData) * INSTANCE_COUNT
-        };
-
-        vk::DescriptorImageInfo  imageInfo{
-            .sampler = textureSampler,
-            .imageView = textureImageView,
-            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal
-        };
-
-        std::array<vk::WriteDescriptorSet, 2> descriptorWrites{{
-            {.dstSet          = descriptorSets[i],
-                .dstBinding      = 0,
-                .dstArrayElement = 0,
-                .descriptorCount = 1,
-                .descriptorType  = vk::DescriptorType::eUniformBuffer,
-                .pBufferInfo     = &bufferInfo},
-            {.dstSet          = descriptorSets[i],
-                .dstBinding      = 1,
-                .dstArrayElement = 0,
-                .descriptorCount = 1,
-                .descriptorType  = vk::DescriptorType::eCombinedImageSampler,
-                .pImageInfo      = &imageInfo}}};
-        device.updateDescriptorSets(descriptorWrites, {});
-    }
-}
-
 
 void HelloTriangle::transitionImageLayout(
     vk::raii::CommandBuffer &commandBuffer,
     const vk::raii::Image &image,
     vk::ImageLayout oldLayout,
-    vk::ImageLayout newLayout
+    vk::ImageLayout newLayout,
+    vk::AccessFlags srcAccessMask,
+    vk::AccessFlags dstAccessMask,
+    vk::PipelineStageFlags srcStage,
+    vk::PipelineStageFlags dstStage
 ){
     vk::ImageMemoryBarrier barrier{
         .oldLayout           = oldLayout,
@@ -573,26 +562,11 @@ void HelloTriangle::transitionImageLayout(
         }
     };
 
-    vk::PipelineStageFlags sourceStage;
-    vk::PipelineStageFlags destinationStage;
-    
-    if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eTransferDstOptimal)
-    {
-        barrier.srcAccessMask = {};
-        barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
-        sourceStage      = vk::PipelineStageFlagBits::eTopOfPipe;
-        destinationStage = vk::PipelineStageFlagBits::eTransfer;
-    } else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {
-        barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-        barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-        sourceStage      = vk::PipelineStageFlagBits::eTransfer;
-        destinationStage = vk::PipelineStageFlagBits::eFragmentShader;
-    } else {
-        throw std::invalid_argument("unsupported layout transition!");
-    }
+    barrier.srcAccessMask = srcAccessMask;
+    barrier.dstAccessMask = dstAccessMask;
 
     commandBuffer.pipelineBarrier(
-        sourceStage, destinationStage, {}, {}, {}, barrier
+        srcStage, dstStage, {}, {}, {}, barrier
     );
 }
 
@@ -612,5 +586,5 @@ void HelloTriangle::copyBufferToImage(
         .imageExtent       = {width, height, 1}
     };
 
-    commandBuffer.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
+    commandBuffer.copyBufferToImage(buffer, image, vk::ImageLayout::eGeneral, region);
 }

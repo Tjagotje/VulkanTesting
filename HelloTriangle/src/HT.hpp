@@ -8,6 +8,8 @@
 #include <GLFW/glfw3.h>
 
 #include "Vertex.hpp"
+#include "HT_memory.hpp"
+#include "vk_mem_alloc.h"
 
 
 constexpr uint32_t WIDTH = 1200;
@@ -26,6 +28,7 @@ private:
     void createInstance();
     void createSurface();
     void createDevice();
+    void createVMA();
     void createSwapChain();
     void createImageViews();
     void createSyncObjects();
@@ -38,8 +41,6 @@ private:
     void createIndexBuffer();
     void createCommandPool();
     void createCommandBuffer();
-    void createDescriptorPool();
-    void createDescriptorSets();
     void createColorResources();
     void recordCommandBuffer(
         uint32_t                imageIndex
@@ -66,7 +67,11 @@ private:
     // helper functions
     vk::raii::CommandBuffer beginSingleTimeCommands();
     void endSingleTimeCommands(vk::raii::CommandBuffer&&);
-    void transitionImageLayout(vk::raii::CommandBuffer&, const vk::raii::Image&, vk::ImageLayout, vk::ImageLayout);
+    void transitionImageLayout(vk::raii::CommandBuffer&, const vk::raii::Image&,
+        vk::ImageLayout, vk::ImageLayout,
+        vk::AccessFlags, vk::AccessFlags,
+        vk::PipelineStageFlags, vk::PipelineStageFlags
+    );
     void copyBufferToImage(vk::raii::CommandBuffer&, const vk::raii::Buffer&, vk::raii::Image&, uint32_t, uint32_t);
     vk::raii::ImageView createImageView(vk::Image const&, vk::Format, vk::ImageAspectFlags, uint32_t);
 
@@ -87,6 +92,8 @@ private:
     vk::raii::Queue queue = nullptr;
     vk::raii::SurfaceKHR surface = nullptr;
     uint32_t queueIndex = ~0;
+
+    VmaAllocator allocator;
 
     vk::raii::SwapchainKHR swapChain = nullptr;
     std::vector<vk::Image> swapChainImages;
@@ -110,12 +117,16 @@ private:
     vk::raii::Buffer        vertexBuffer = nullptr;
     vk::raii::DeviceMemory  vertexBufferMemory = nullptr;
 
+    ht::Buffer  newVertexBuffer;
+
     vk::raii::Buffer        indexBuffer = nullptr;
     vk::raii::DeviceMemory  indexBufferMemory = nullptr;
 
     std::vector<vk::raii::Buffer>       uniformBuffers;
     std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
     std::vector<void *>                 uniformBuffersMapped;    
+    std::array<vk::DeviceAddress,
+        MAX_FRAMES_IN_FLIGHT>           uniformBufferAddresses;
 
     vk::raii::DescriptorPool descriptorPool = nullptr;
     std::vector<vk::raii::DescriptorSet> descriptorSets;
@@ -179,8 +190,8 @@ private:
     };
 
     glm::vec3 eye_pos = glm::vec3(2.0f);
-    float rot = 0.0f;
-    float dist = 2.0f;
+    float rot = -45.0f;
+    float dist = 3.0f;
     float height = 2.0f;
 
     uint32_t               mipLevels          = 0;
