@@ -6,6 +6,7 @@ int main()
 {
     try
     {
+        std::cout << "Create memory helper functions which move data staged & which create special buffers!" << std::endl;
         HelloTriangle app;
         app.run();
     }

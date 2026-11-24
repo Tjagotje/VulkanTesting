@@ -16,6 +16,8 @@ class Buffer {
 public:
     Buffer() = default;
     Buffer(VmaAllocator_T* allocator, vk::DeviceSize size,
+        vk::BufferUsageFlags usage);
+    Buffer(VmaAllocator_T* allocator, vk::DeviceSize size,
         vk::BufferUsageFlags usage, const VmaAllocationCreateInfo& allocInfo);
     ~Buffer();
 
@@ -31,7 +33,7 @@ public:
         return device.getBufferAddress({.buffer = mBuffer});
     };
 
-    void copyMemory(void* data, vk::DeviceSize size);
+    void copyMemory(const void* data, vk::DeviceSize size);
 
 private:
     void destroy();

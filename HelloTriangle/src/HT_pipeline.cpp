@@ -1,5 +1,6 @@
 #include "HT.hpp"
 #include "Vertex.hpp"
+#include "vk_mem_alloc.h"
 #include "vulkan/vulkan.hpp"
 #include <glm/ext/matrix_transform.hpp>
 
@@ -281,7 +282,7 @@ void HelloTriangle::recordCommandBuffer(uint32_t imageIndex) {
     );
     commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
 
-    commandBuffer.bindVertexBuffers(0, *vertexBuffer, {0});
+    commandBuffer.bindVertexBuffers(0, newVertexBuffer.handle(), {0});
     commandBuffer.bindIndexBuffer(*indexBuffer, 0, vk::IndexType::eUint16);
 
     glm::mat4 view = glm::lookAt(eye_pos, glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
@@ -423,30 +424,15 @@ std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> HelloTriangle::createBuffer(
 void HelloTriangle::createVertexBuffer() {
     vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
-    auto [stagingBuffer, stagingBufferMemory] = createBuffer(
-        bufferSize,
-        vk::BufferUsageFlagBits::eTransferSrc, 
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-
-    void *dataStaging = stagingBufferMemory.mapMemory(0, bufferSize);
-    memcpy(dataStaging, vertices.data(), bufferSize);
-    stagingBufferMemory.unmapMemory();
-
-    std::tie(vertexBuffer, vertexBufferMemory) = createBuffer(
-            bufferSize,
-            vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-            vk::MemoryPropertyFlagBits::eDeviceLocal);
-
-    copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
-
-    // newBuffer !!!
     VmaAllocationCreateInfo allocCreateInfo;
-    auto _stagingBuffer = ht::Buffer(
+    newVertexBuffer = ht::Buffer(
         allocator,
         bufferSize,
-        vk::BufferUsageFlagBits::eTransferSrc,
-        { .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, .usage = VMA_MEMORY_USAGE_AUTO}
+        vk::BufferUsageFlagBits::eVertexBuffer,
+        {.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, .usage = VMA_MEMORY_USAGE_AUTO}
     );
+
+    newVertexBuffer.copyMemory(vertices.data(), bufferSize);
 }
 
 void HelloTriangle::createIndexBuffer() {

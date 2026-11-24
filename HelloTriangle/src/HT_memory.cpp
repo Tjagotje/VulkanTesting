@@ -61,7 +61,7 @@ void Buffer::destroy() {
     }
 }
 
-void Buffer::copyMemory(void *data, vk::DeviceSize size){
+void Buffer::copyMemory(const void *data, vk::DeviceSize size){
     vmaCopyMemoryToAllocation(mAllocator, data, mAllocation, 0, size);
 }
 
