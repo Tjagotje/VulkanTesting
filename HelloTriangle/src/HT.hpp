@@ -8,8 +8,7 @@
 #include <GLFW/glfw3.h>
 
 #include "Vertex.hpp"
-#include "HT_memory.hpp"
-#include "vk_mem_alloc.h"
+#include "memory/HT_memory.hpp"
 
 
 constexpr uint32_t WIDTH = 1200;
@@ -123,13 +122,9 @@ private:
     std::array<vk::DeviceAddress,
         MAX_FRAMES_IN_FLIGHT>           uniformBufferAddresses;
 
-    vk::raii::Image        depthImage       = nullptr;
-    vk::raii::DeviceMemory depthImageMemory = nullptr;
-    vk::raii::ImageView    depthImageView   = nullptr;
-
-    vk::raii::Image        colorImage       = nullptr;
-    vk::raii::DeviceMemory colorImageMemory = nullptr;
-    vk::raii::ImageView    colorImageView   = nullptr;
+    
+    ht::Image depthImage;
+    ht::Image colorImage;
 
     vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e8;
 
@@ -182,8 +177,8 @@ private:
     };
 
     glm::vec3 eye_pos = glm::vec3(2.0f);
-    float rot = -45.0f;
-    float dist = 3.0f;
+    float rot = 4.71238898f;
+    float dist = 4.5f;
     float height = 2.0f;
 
     uint32_t               mipLevels          = 0;

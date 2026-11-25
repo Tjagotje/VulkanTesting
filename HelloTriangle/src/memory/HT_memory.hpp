@@ -35,15 +35,20 @@ class Buffer {
 public:
     Buffer() = default;
     Buffer(Allocator* allocator, vk::DeviceSize size,
-        vk::BufferUsageFlags usage);
-    Buffer(Allocator* allocator, vk::DeviceSize size,
-        vk::BufferUsageFlags usage, const VmaAllocationCreateInfo& allocInfo);
-    ~Buffer();
+        vk::BufferUsageFlags usage, VmaAllocationCreateInfo allocInfo);
+    ~Buffer() {
+        destroy();
+    };
 
     Buffer(const Buffer&) = delete;
     Buffer& operator=(const Buffer&) = delete;
-    Buffer(Buffer&& o) noexcept;
-    Buffer& operator=(Buffer&& o) noexcept;
+    Buffer(Buffer&& o) noexcept {
+        swap(o);
+    };
+    Buffer& operator=(Buffer&& o) noexcept {
+        if (this != &o) { destroy(); swap(o); };
+        return *this;
+    };
 
     vk::Buffer     handle()  const { return mBuffer; } 
     void*          mapped()  const { return mMapped; }
@@ -64,5 +69,47 @@ private:
     void*            mMapped     = nullptr;
     vk::DeviceSize   mSize       = 0;
 };
+
+
+class Image {
+public:
+    Image() = default;
+    Image(
+        Allocator* allocator,
+        const vk::raii::Device& device,
+        vk::ImageCreateInfo imageInfo,
+        vk::ImageViewCreateInfo viewInfo,
+        VmaAllocationCreateInfo allocInfo
+    );
+    ~Image() {
+        destroy();
+    };
+
+    Image(const Image&) = delete;
+    Image& operator=(const Image&) = delete;
+    Image(Image&& o) noexcept {
+        swap(o);
+    };
+    Image& operator=(Image&& o) noexcept {
+        if (this != &o) { destroy(); swap(o); };
+        return *this;
+    };
+
+    vk::Image *    pointer() { return &mImg; }
+    vk::Image      handle()  const { return mImg; } 
+    vk::ImageView  view()   { return mImgView; }
+    void*          mapped()  const { return mMapped; }
+
+private:
+    void destroy();
+    void swap(Image& o) noexcept;
+
+    Allocator*          mAllocator  = nullptr;
+    VmaAllocation_T*    mAllocation = nullptr;
+    vk::Image           mImg;
+    vk::raii::ImageView mImgView    = nullptr; 
+    void*               mMapped     = nullptr;
+};
+
 
 }

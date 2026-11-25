@@ -16,8 +16,10 @@ add_executable(HelloTriangle
     src/HT.cpp
     src/HT_init.cpp
     src/HT_pipeline.cpp
-    src/HT_memory.cpp
-    src/VMA_implementation.cpp
+    src/memory/HT_allocator.cpp
+    src/memory/HT_buffer.cpp
+    src/memory/HT_image.cpp
+    src/memory/VMA_implementation.cpp
 )
 
 

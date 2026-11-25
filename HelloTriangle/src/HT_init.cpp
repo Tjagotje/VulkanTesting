@@ -5,6 +5,8 @@
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_raii.hpp>
 
+#include "memory/vk_mem_alloc.h"
+
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
@@ -77,8 +79,11 @@ void HelloTriangle::createInstance() {
 
     instance = vk::raii::Instance(context, createInfo);
 
-    vk::DebugUtilsMessageSeverityFlagsEXT severityFlags(vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
-                                                        vk::DebugUtilsMessageSeverityFlagBitsEXT::eError);
+    vk::DebugUtilsMessageSeverityFlagsEXT severityFlags(
+        vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
+        vk::DebugUtilsMessageSeverityFlagBitsEXT::eError
+    );
+
     vk::DebugUtilsMessageTypeFlagsEXT     messageTypeFlags(
             vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation);
     vk::DebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCreateInfoEXT{.messageSeverity = severityFlags,
@@ -439,19 +444,14 @@ void HelloTriangle::createDepthResources() {
         .usage       = vk::ImageUsageFlagBits::eDepthStencilAttachment,
         .sharingMode = vk::SharingMode::eExclusive
     };
-    depthImage = vk::raii::Image(device, imageInfo);
 
-    vk::MemoryRequirements memRequirements = depthImage.getMemoryRequirements();
-    vk::MemoryAllocateInfo allocInfo{
-        .allocationSize  = memRequirements.size,
-        .memoryTypeIndex = findMemoryType(
-            memRequirements.memoryTypeBits,
-            vk::MemoryPropertyFlagBits::eDeviceLocal)
-        };
-    depthImageMemory = vk::raii::DeviceMemory(device, allocInfo);
-    depthImage.bindMemory(depthImageMemory, 0);
+    vk::ImageViewCreateInfo viewInfo{
+        .viewType         = vk::ImageViewType::e2D,
+        .format           = vk::Format::eD32Sfloat,
+        .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1}
+    };
 
-    depthImageView  = createImageView(depthImage, vk::Format::eD32Sfloat, vk::ImageAspectFlagBits::eDepth, 1);
+    depthImage = ht::Image(&allocator, device, imageInfo, viewInfo, {});
 }
 
 void HelloTriangle::createColorResources() {
@@ -468,17 +468,12 @@ void HelloTriangle::createColorResources() {
         .usage       = vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,
         .sharingMode = vk::SharingMode::eExclusive
     };
-    colorImage = vk::raii::Image(device, imageInfo);
 
-    vk::MemoryRequirements memRequirements = colorImage.getMemoryRequirements();
-    vk::MemoryAllocateInfo allocInfo{
-        .allocationSize  = memRequirements.size,
-        .memoryTypeIndex = findMemoryType(
-            memRequirements.memoryTypeBits,
-            vk::MemoryPropertyFlagBits::eDeviceLocal)
-        };
-    colorImageMemory = vk::raii::DeviceMemory(device, allocInfo);
-    colorImage.bindMemory(colorImageMemory, 0);
+    vk::ImageViewCreateInfo viewInfo{
+        .viewType         = vk::ImageViewType::e2D,
+        .format           = colorFormat,
+        .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1}
+    };
 
-    colorImageView                      = createImageView(colorImage, colorFormat, vk::ImageAspectFlagBits::eColor, 1);
+    colorImage = ht::Image(&allocator, device, imageInfo, viewInfo, {});
 }

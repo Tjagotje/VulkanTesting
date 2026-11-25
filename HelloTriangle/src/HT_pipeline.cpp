@@ -1,6 +1,6 @@
 #include "HT.hpp"
 #include "Vertex.hpp"
-#include "vk_mem_alloc.h"
+#include "memory/vk_mem_alloc.h"
 #include "vulkan/vulkan.hpp"
 #include <glm/ext/matrix_transform.hpp>
 
@@ -219,7 +219,7 @@ void HelloTriangle::recordCommandBuffer(uint32_t imageIndex) {
     );
 
     transition_image_layout(
-        &*depthImage,
+        depthImage.pointer(),
         vk::ImageLayout::eUndefined,
         vk::ImageLayout::eGeneral,
         vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
@@ -230,7 +230,7 @@ void HelloTriangle::recordCommandBuffer(uint32_t imageIndex) {
     );
 
     transition_image_layout(
-        &*colorImage,
+        colorImage.pointer(),
         vk::ImageLayout::eUndefined,
         vk::ImageLayout::eGeneral,
         vk::AccessFlagBits2::eColorAttachmentWrite,
@@ -245,7 +245,7 @@ void HelloTriangle::recordCommandBuffer(uint32_t imageIndex) {
     vk::ClearValue  clearDepth = vk::ClearDepthStencilValue(1.0f, 0);
 
     vk::RenderingAttachmentInfo attachmentInfo = {
-        .imageView = colorImageView,
+        .imageView = colorImage.view(),
         .imageLayout = vk::ImageLayout::eGeneral,
         .resolveMode = vk::ResolveModeFlagBits::eAverage,
         .resolveImageView = swapChainImageViews[imageIndex],
@@ -256,7 +256,7 @@ void HelloTriangle::recordCommandBuffer(uint32_t imageIndex) {
     };
 
     vk::RenderingAttachmentInfo depthAttachmentInfo = {
-        .imageView   = depthImageView,
+        .imageView   = depthImage.view(),
         .imageLayout = vk::ImageLayout::eGeneral,
         .loadOp      = vk::AttachmentLoadOp::eClear,
         .storeOp     = vk::AttachmentStoreOp::eDontCare,
