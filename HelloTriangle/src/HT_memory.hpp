@@ -5,19 +5,38 @@
 
 struct VmaAllocator_T;    // forward declarations: avoids including the huge VMA header here
 struct VmaAllocation_T;
+struct VmaAllocatorCreateInfo;
 struct VmaAllocationCreateInfo;
 
 namespace ht {
 
+class Allocator {
+public:
+    Allocator() = default;
+    explicit Allocator(VmaAllocatorCreateInfo info);
+    ~Allocator();
 
+    Allocator(const Allocator&) = delete;
+    Allocator& operator=(const Allocator&) = delete;
+
+    Allocator(Allocator&& o) noexcept 
+        : mAllocator(std::exchange(o.mAllocator, nullptr)) {}
+
+    Allocator& operator=(Allocator&& other) noexcept;
+     
+    VmaAllocator_T* handle() const { return mAllocator; }
+
+private:
+    VmaAllocator_T* mAllocator = nullptr;
+};
 
 
 class Buffer {
 public:
     Buffer() = default;
-    Buffer(VmaAllocator_T* allocator, vk::DeviceSize size,
+    Buffer(Allocator* allocator, vk::DeviceSize size,
         vk::BufferUsageFlags usage);
-    Buffer(VmaAllocator_T* allocator, vk::DeviceSize size,
+    Buffer(Allocator* allocator, vk::DeviceSize size,
         vk::BufferUsageFlags usage, const VmaAllocationCreateInfo& allocInfo);
     ~Buffer();
 
@@ -39,7 +58,7 @@ private:
     void destroy();
     void swap(Buffer& o) noexcept;
 
-    VmaAllocator_T*  mAllocator  = nullptr;
+    Allocator*  mAllocator  = nullptr;
     VmaAllocation_T* mAllocation = nullptr;
     vk::Buffer       mBuffer;
     void*            mMapped     = nullptr;

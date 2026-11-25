@@ -168,7 +168,6 @@ void HelloTriangle::createVMA() {
     VmaAllocatorCreateFlags flags = 
         VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT |
         VMA_ALLOCATOR_CREATE_KHR_BIND_MEMORY2_BIT |
-        VMA_ALLOCATOR_CREATE_KHR_EXTENDED_FLAGS_BIT |
         VMA_ALLOCATOR_CREATE_EXT_MEMORY_BUDGET_BIT |
         VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
 
@@ -180,7 +179,7 @@ void HelloTriangle::createVMA() {
         .vulkanApiVersion = VK_API_VERSION_1_4,
     };
 
-    vmaCreateAllocator(&allocatorCreateInfo, &allocator);
+    allocator = ht::Allocator(allocatorCreateInfo);
 }
 
 

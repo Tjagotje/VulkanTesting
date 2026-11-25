@@ -282,8 +282,8 @@ void HelloTriangle::recordCommandBuffer(uint32_t imageIndex) {
     );
     commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
 
-    commandBuffer.bindVertexBuffers(0, newVertexBuffer.handle(), {0});
-    commandBuffer.bindIndexBuffer(*indexBuffer, 0, vk::IndexType::eUint16);
+    commandBuffer.bindVertexBuffers(0, vertexBuffer.handle(), {0});
+    commandBuffer.bindIndexBuffer(indexBuffer.handle(), 0, vk::IndexType::eUint16);
 
     glm::mat4 view = glm::lookAt(eye_pos, glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
     glm::mat4 proj = glm::perspective(
@@ -425,31 +425,30 @@ void HelloTriangle::createVertexBuffer() {
     vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
     VmaAllocationCreateInfo allocCreateInfo;
-    newVertexBuffer = ht::Buffer(
-        allocator,
+    vertexBuffer = ht::Buffer(
+        &allocator,
         bufferSize,
         vk::BufferUsageFlagBits::eVertexBuffer,
         {.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, .usage = VMA_MEMORY_USAGE_AUTO}
     );
 
-    newVertexBuffer.copyMemory(vertices.data(), bufferSize);
+    vertexBuffer.copyMemory(vertices.data(), bufferSize);
 }
 
 void HelloTriangle::createIndexBuffer() {
-		vk::DeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+    vk::DeviceSize bufferSize = sizeof(indices[0]) * indices.size();
 
-		auto [stagingBuffer, stagingBufferMemory] =
-		    createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+    VmaAllocationCreateInfo allocCreateInfo;
+    indexBuffer = ht::Buffer(
+        &allocator,
+        bufferSize,
+        vk::BufferUsageFlagBits::eIndexBuffer,
+        {.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, .usage = VMA_MEMORY_USAGE_AUTO}
+    );
 
-		void *data = stagingBufferMemory.mapMemory(0, bufferSize);
-		memcpy(data, indices.data(), (size_t) bufferSize);
-		stagingBufferMemory.unmapMemory();
-
-		std::tie(indexBuffer, indexBufferMemory) =
-		    createBuffer(bufferSize, vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal);
-
-		copyBuffer(stagingBuffer, indexBuffer, bufferSize);
+    indexBuffer.copyMemory(indices.data(), bufferSize);
 }
+
 
 void HelloTriangle::copyBuffer(vk::raii::Buffer &srcBuffer, vk::raii::Buffer &dstBuffer, vk::DeviceSize size)
 {

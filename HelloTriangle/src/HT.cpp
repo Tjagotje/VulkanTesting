@@ -120,8 +120,6 @@ void HelloTriangle::drawFrame() {
 void HelloTriangle::cleanup() {
     glfwDestroyWindow(window);
     glfwTerminate();
-
-    vmaDestroyAllocator(allocator);
 }
 
 

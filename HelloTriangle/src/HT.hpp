@@ -93,7 +93,7 @@ private:
     vk::raii::SurfaceKHR surface = nullptr;
     uint32_t queueIndex = ~0;
 
-    VmaAllocator allocator;
+    ht::Allocator allocator;
 
     vk::raii::SwapchainKHR swapChain = nullptr;
     std::vector<vk::Image> swapChainImages;
@@ -114,22 +114,14 @@ private:
 
     uint32_t frameIndex = 0;
 
-    vk::raii::Buffer        vertexBuffer = nullptr;
-    vk::raii::DeviceMemory  vertexBufferMemory = nullptr;
-
-    ht::Buffer  newVertexBuffer;
-
-    vk::raii::Buffer        indexBuffer = nullptr;
-    vk::raii::DeviceMemory  indexBufferMemory = nullptr;
+    ht::Buffer  vertexBuffer;
+    ht::Buffer  indexBuffer;
 
     std::vector<vk::raii::Buffer>       uniformBuffers;
     std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
     std::vector<void *>                 uniformBuffersMapped;    
     std::array<vk::DeviceAddress,
         MAX_FRAMES_IN_FLIGHT>           uniformBufferAddresses;
-
-    vk::raii::DescriptorPool descriptorPool = nullptr;
-    std::vector<vk::raii::DescriptorSet> descriptorSets;
 
     vk::raii::Image        depthImage       = nullptr;
     vk::raii::DeviceMemory depthImageMemory = nullptr;

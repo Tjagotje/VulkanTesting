@@ -6,8 +6,34 @@
 
 namespace ht{
 
+Allocator::Allocator(VmaAllocatorCreateInfo info) {
+    mAllocator = VK_NULL_HANDLE;
+
+    VkResult result = vmaCreateAllocator(&info, &mAllocator);
+
+    if (result != VK_SUCCESS) {
+        throw std::runtime_error("vmaCreateAllocator failed: " +
+            std::to_string(result));
+    }
+}
+
+Allocator::~Allocator() {
+    vmaDestroyAllocator(mAllocator);
+}
+
+Allocator& Allocator::operator=(Allocator&& other) noexcept {
+    if (this != &other) {
+        if (mAllocator) {
+            vmaDestroyAllocator(mAllocator);
+        };
+
+        mAllocator = std::exchange(other.mAllocator, nullptr);
+    }
+    return *this;
+}
+
 Buffer::Buffer(
-    VmaAllocator_T* allocator,
+    ht::Allocator* allocator,
     vk::DeviceSize size,
     vk::BufferUsageFlags usage,
     const VmaAllocationCreateInfo& allocInfo
@@ -15,6 +41,8 @@ Buffer::Buffer(
     mAllocation = VmaAllocation();
     mBuffer = vk::Buffer();
 
+    assert(allocator != nullptr);
+    assert(allocator->handle() != nullptr);
 
     vk::BufferCreateInfo bufferCreateInfo { 
         .sType = vk::StructureType::eBufferCreateInfo,
@@ -24,7 +52,7 @@ Buffer::Buffer(
     VkBuffer raw;
     VmaAllocationInfo info;
 
-    VkResult result = vmaCreateBuffer(allocator, bufferCreateInfo, &allocInfo, &raw, &mAllocation, &info); 
+    VkResult result = vmaCreateBuffer(allocator->handle(), bufferCreateInfo, &allocInfo, &raw, &mAllocation, &info); 
     if (result != VK_SUCCESS) {
         throw std::runtime_error("vmaCreateBuffer failed!");
     }
@@ -56,13 +84,13 @@ void Buffer::swap(Buffer& o) noexcept {
 
 void Buffer::destroy() {
     if (mBuffer) {
-        vmaDestroyBuffer(mAllocator, mBuffer, mAllocation);
+        vmaDestroyBuffer(mAllocator->handle(), mBuffer, mAllocation);
         mBuffer = nullptr;
     }
 }
 
 void Buffer::copyMemory(const void *data, vk::DeviceSize size){
-    vmaCopyMemoryToAllocation(mAllocator, data, mAllocation, 0, size);
+    vmaCopyMemoryToAllocation(mAllocator->handle(), data, mAllocation, 0, size);
 }
 
 
