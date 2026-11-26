@@ -80,21 +80,9 @@ void HelloTriangle::createGraphicsPipeline() {
     // assemble topology as triangle list
     vk::PipelineInputAssemblyStateCreateInfo inputAssembly{.topology = vk::PrimitiveTopology::eTriangleList};
 
-    // Viewport & scissor 
-    vk::Viewport viewport{
-        0.0f, 0.0f,
-        static_cast<float>(swapChainExtent.width),
-        static_cast<float>(swapChainExtent.height),
-        0.0f, 1.0f
-    };
-
-    vk::Rect2D scissor{vk::Offset2D{ 0, 0 }, swapChainExtent};
-    
     vk::PipelineViewportStateCreateInfo viewportState{
         .viewportCount = 1,
-        .pViewports = &viewport,
         .scissorCount = 1,
-        .pScissors = &scissor
     };
 
     // default rasterization
@@ -111,8 +99,8 @@ void HelloTriangle::createGraphicsPipeline() {
     // Multisampling turned on!
     vk::PipelineMultisampleStateCreateInfo multisampling{
         .rasterizationSamples = msaaSamples,
-        .sampleShadingEnable = vk::True,
-        .minSampleShading = 0.95f
+        .sampleShadingEnable = vk::False,
+        // .minSampleShading = 0.95f
     };
 
     // Color blending (alpha)
@@ -218,8 +206,8 @@ void HelloTriangle::recordCommandBuffer(uint32_t imageIndex) {
         vk::ImageAspectFlagBits::eColor  
     );
 
-    transition_image_layout(
-        depthImage.pointer(),
+    depthImage.transition_layout(
+        commandBuffers[frameIndex],
         vk::ImageLayout::eUndefined,
         vk::ImageLayout::eGeneral,
         vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
@@ -229,8 +217,8 @@ void HelloTriangle::recordCommandBuffer(uint32_t imageIndex) {
         vk::ImageAspectFlagBits::eDepth
     );
 
-    transition_image_layout(
-        colorImage.pointer(),
+    colorImage.transition_layout(
+        commandBuffers[frameIndex],
         vk::ImageLayout::eUndefined,
         vk::ImageLayout::eGeneral,
         vk::AccessFlagBits2::eColorAttachmentWrite,
@@ -242,7 +230,7 @@ void HelloTriangle::recordCommandBuffer(uint32_t imageIndex) {
 
 
     vk::ClearValue  clearColor = vk::ClearColorValue(0.1f, 0.1f, 0.1f, 1.0f);
-    vk::ClearValue  clearDepth = vk::ClearDepthStencilValue(1.0f, 0);
+    vk::ClearValue  clearDepth = vk::ClearDepthStencilValue(10.0f, 0);
 
     vk::RenderingAttachmentInfo attachmentInfo = {
         .imageView = colorImage.view(),

@@ -1,6 +1,5 @@
 struct VSInput {
     float3 inPos;
-    float3 inColor;
     float2 inTexCoord;
 };
 
@@ -20,7 +19,6 @@ struct Instance {
 struct VSOutput
 {
     float4 pos : SV_Position;
-    float3 fragColor;
     float2 fragTexCoord;
 };
 
@@ -32,7 +30,6 @@ VSOutput vertMain(VSInput input, uint instanceID: SV_InstanceID) {
 
     float4 pos = float4(input.inPos, 1.0f);
     output.pos = mul(pc.viewproj, mul(model, pos));
-    output.fragColor = input.inColor;
     output.fragTexCoord = input.inTexCoord;
     return output;
 }

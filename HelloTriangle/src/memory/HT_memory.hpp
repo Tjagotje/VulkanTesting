@@ -100,6 +100,17 @@ public:
     vk::ImageView  view()   { return mImgView; }
     void*          mapped()  const { return mMapped; }
 
+    void transition_layout(
+        vk::raii::CommandBuffer& commandBuffer,
+        vk::ImageLayout          old_layout,
+        vk::ImageLayout          new_layout,
+        vk::AccessFlags2         src_access_mask,
+        vk::AccessFlags2         dst_access_mask,
+        vk::PipelineStageFlags2  src_stage_mask,
+        vk::PipelineStageFlags2  dst_stage_mask,
+        vk::ImageAspectFlags     aspect_flags
+    );
+
 private:
     void destroy();
     void swap(Image& o) noexcept;
