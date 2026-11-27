@@ -1,6 +1,9 @@
 #include "vk_mem_alloc.h"
 #include "HT_memory.hpp"
+#include "vulkan/vulkan.hpp"
 #include <vulkan/vulkan_raii.hpp>
+
+#include <iostream>
 
 namespace ht {
 
@@ -36,6 +39,7 @@ Image::Image(
     mMapped = info.pMappedData;
 
     viewInfo.image = mImg;
+    mExtent = imageInfo.extent;
 
     mImgView = vk::raii::ImageView(device, viewInfo);
 };
@@ -82,6 +86,59 @@ void Image::transition_layout(
         .pImageMemoryBarriers    = &barrier};
 
     commandBuffer.pipelineBarrier2(dependency_info);
+}
+
+void Image::copyMemoryStaged(
+    const void *data,
+    vk::DeviceSize size,
+    const vk::raii::CommandPool& pool,
+    const vk::raii::Device& device,
+    const vk::raii::Queue& queue
+){
+    Buffer stagingBuffer = {
+        mAllocator,
+        size,
+        vk::BufferUsageFlagBits::eTransferSrc,
+        {
+            .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
+            .usage= VMA_MEMORY_USAGE_AUTO
+        }
+    };
+
+    stagingBuffer.copyMemory(data, size);
+
+    vk::CommandBufferAllocateInfo allocInfo{
+        .commandPool = pool,
+        .level = vk::CommandBufferLevel::ePrimary,
+        .commandBufferCount = 1
+    };
+    vk::raii::CommandBuffer commandBuffer = std::move(vk::raii::CommandBuffers(device, allocInfo).front());
+    vk::CommandBufferBeginInfo beginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit};
+
+    commandBuffer.begin(beginInfo);
+
+    vk::BufferImageCopy region {
+        .bufferOffset = 0,
+        .bufferRowLength = 0,
+        .bufferImageHeight = 0,
+        .imageSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
+        .imageExtent = mExtent
+    };
+
+    commandBuffer.copyBufferToImage(
+        stagingBuffer.handle(),
+        mImg,
+        vk::ImageLayout::eGeneral,
+        region
+    );
+
+    commandBuffer.end();
+
+    vk::SubmitInfo submitInfo{.commandBufferCount = 1, .pCommandBuffers = &*commandBuffer};
+    queue.submit(submitInfo, nullptr);
+    queue.waitIdle();
+
+    std::cout << "Done copying staged image!!" << std::endl;
 }
 
 void Image::destroy() {

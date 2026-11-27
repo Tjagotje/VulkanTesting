@@ -1,5 +1,6 @@
 #pragma once
 
+#include "vulkan/vulkan.hpp"
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
@@ -58,6 +59,13 @@ public:
     };
 
     void copyMemory(const void* data, vk::DeviceSize size);
+    void copyMemoryStaged(
+        const void* data,
+        vk::DeviceSize size,
+        const vk::raii::CommandPool& pool,
+        const vk::raii::Device& device,
+        const vk::raii::Queue& queue
+    );
 
 private:
     void destroy();
@@ -100,6 +108,14 @@ public:
     vk::ImageView  view()   { return mImgView; }
     void*          mapped()  const { return mMapped; }
 
+    void copyMemoryStaged(
+        const void *data,
+        vk::DeviceSize size,
+        const vk::raii::CommandPool& pool,
+        const vk::raii::Device& device,
+        const vk::raii::Queue& queue
+    );
+
     void transition_layout(
         vk::raii::CommandBuffer& commandBuffer,
         vk::ImageLayout          old_layout,
@@ -120,6 +136,7 @@ private:
     vk::Image           mImg;
     vk::raii::ImageView mImgView    = nullptr; 
     void*               mMapped     = nullptr;
+    vk::Extent3D        mExtent;
 };
 
 

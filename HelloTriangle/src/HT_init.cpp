@@ -297,19 +297,6 @@ void HelloTriangle::createTextureImage()
 
     std::cout << "Mip Levels = " << mipLevels << std::endl;
 
-    //mipLevels = 1;
-
-    auto [stagingBuffer, stagingBufferMemory] = createBuffer(
-        imageSize,
-        vk::BufferUsageFlagBits::eTransferSrc,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
-    );
-
-    void* data = stagingBufferMemory.mapMemory(0, imageSize);
-    memcpy(data, pixels, imageSize);
-    stagingBufferMemory.unmapMemory();
-    stbi_image_free(pixels);
-    
     vk::ImageCreateInfo imageInfo{
         .imageType   = vk::ImageType::e2D,
         .format      = vk::Format::eR8G8B8A8Srgb,
@@ -322,6 +309,58 @@ void HelloTriangle::createTextureImage()
         .sharingMode = vk::SharingMode::eExclusive
     };
 
+    vk::ImageViewCreateInfo viewInfo {
+        .viewType = vk::ImageViewType::e2D,
+        .format = vk::Format::eR8G8B8A8Srgb,
+        .subresourceRange = {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .levelCount = mipLevels,
+            .layerCount = 1
+        }
+    };
+
+    newTextureImage = ht::Image(
+        &allocator,
+        device,
+        imageInfo,
+        viewInfo,
+        {}
+    );
+
+    newTextureImage.copyMemoryStaged(
+        pixels,
+        imageSize,
+        commandPool,
+        device,
+        queue
+    );
+
+    vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands();
+    newTextureImage.transition_layout(
+        commandBuffer,        
+        vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eGeneral,
+        vk::AccessFlagBits2::eNone,
+        vk::AccessFlagBits2::eTransferWrite,
+        vk::PipelineStageFlagBits2::eNone,
+        vk::PipelineStageFlagBits2::eCopy,
+        vk::ImageAspectFlagBits::eColor
+    );
+
+    // TODO: miplevels
+
+    auto [stagingBuffer, stagingBufferMemory] = createBuffer(
+        imageSize,
+        vk::BufferUsageFlagBits::eTransferSrc,
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+    );
+
+    void* data = stagingBufferMemory.mapMemory(0, imageSize);
+    memcpy(data, pixels, imageSize);
+    stagingBufferMemory.unmapMemory();
+    stbi_image_free(pixels);
+
+
     textureImage = vk::raii::Image(device, imageInfo);
     vk::MemoryRequirements memRequirements = textureImage.getMemoryRequirements();
     vk::MemoryAllocateInfo allocInfo{
@@ -333,7 +372,6 @@ void HelloTriangle::createTextureImage()
     textureImageMemory = vk::raii::DeviceMemory(device, allocInfo);
     textureImage.bindMemory(textureImageMemory, 0);
 
-    vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands();
     vk::ImageMemoryBarrier2 barrier{
         .srcStageMask        = vk::PipelineStageFlagBits2::eNone,
         .srcAccessMask       = vk::AccessFlagBits2::eNone,

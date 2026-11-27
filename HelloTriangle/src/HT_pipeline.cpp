@@ -155,7 +155,7 @@ void HelloTriangle::createGraphicsPipeline() {
             .pViewportState      = &viewportState,
             .pRasterizationState = &rasterizer,
             .pMultisampleState   = &multisampling,
-            .pDepthStencilState = &depthStencil,
+            .pDepthStencilState  = &depthStencil,
             .pColorBlendState    = &colorBlending,
             .pDynamicState       = &dynamicState,
             .layout              = pipelineLayout,
@@ -430,11 +430,21 @@ void HelloTriangle::createIndexBuffer() {
     indexBuffer = ht::Buffer(
         &allocator,
         bufferSize,
-        vk::BufferUsageFlagBits::eIndexBuffer,
-        {.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT, .usage = VMA_MEMORY_USAGE_AUTO}
+        vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
+        {
+            .usage = VMA_MEMORY_USAGE_AUTO
+        }
     );
 
-    indexBuffer.copyMemory(indices.data(), bufferSize);
+    indexBuffer.copyMemoryStaged(
+        indices.data(),
+        bufferSize,
+        commandPool,
+        device,
+        queue
+    );
+
+    //indexBuffer.copyMemory(indices.data(), bufferSize);
 }
 
 
@@ -466,19 +476,20 @@ void HelloTriangle::createDescriptorSetLayout() {
 void HelloTriangle::createUniformBuffers(){
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
+
         vk::DeviceSize bufferSize = sizeof(InstanceData) * INSTANCE_COUNT;
-        auto [buffer, bufferMem]  = createBuffer(
+
+        uniformBuffers[i] = {
+            &allocator,
             bufferSize,
-            vk::BufferUsageFlagBits::eShaderDeviceAddress, 
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
-        );
+            vk::BufferUsageFlagBits::eShaderDeviceAddress,
+            {
+                .flags= VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT,
+                .usage = VMA_MEMORY_USAGE_AUTO
+            }
+        };
 
-
-        uniformBufferAddresses[i] = device.getBufferAddress({.buffer = *buffer});
-        uniformBuffers.emplace_back(std::move(buffer));
-        uniformBuffersMemory.emplace_back(std::move(bufferMem));
-        uniformBuffersMapped.emplace_back( uniformBuffersMemory.back().mapMemory(0, bufferSize));
-
+        uniformBufferAddresses[i] = uniformBuffers[i].address(device);
     }
 }
 
@@ -508,7 +519,10 @@ void HelloTriangle::updateUniformBuffer(uint32_t currentImage)
         };
     }
 
-    memcpy(uniformBuffersMapped[currentImage], instances.data(), sizeof(InstanceData) * INSTANCE_COUNT);
+    uniformBuffers[currentImage].copyMemory(
+        instances.data(),
+        sizeof(InstanceData) * INSTANCE_COUNT
+    );
 }
 
 

@@ -116,9 +116,8 @@ private:
     ht::Buffer  vertexBuffer;
     ht::Buffer  indexBuffer;
 
-    std::vector<vk::raii::Buffer>       uniformBuffers;
-    std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
-    std::vector<void *>                 uniformBuffersMapped;    
+    std::array<ht::Buffer,
+        MAX_FRAMES_IN_FLIGHT>           uniformBuffers;
     std::array<vk::DeviceAddress,
         MAX_FRAMES_IN_FLIGHT>           uniformBufferAddresses;
 
@@ -182,6 +181,9 @@ private:
     float height = 2.0f;
 
     uint32_t               mipLevels          = 0;
+
+    ht::Image              newTextureImage;
+
     vk::raii::Image        textureImage       = nullptr;
     vk::raii::DeviceMemory textureImageMemory = nullptr;
 
