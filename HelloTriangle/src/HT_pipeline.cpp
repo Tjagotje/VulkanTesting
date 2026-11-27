@@ -171,6 +171,8 @@ void HelloTriangle::createGraphicsPipeline() {
     graphicsPipeline = vk::raii::Pipeline(device, nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
 }
 
+void HelloTriangle::createShadowPipeline() {}
+
 void HelloTriangle::createCommandPool() {
     vk::CommandPoolCreateInfo poolInfo{
         .flags            = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
@@ -290,7 +292,7 @@ void HelloTriangle::recordCommandBuffer(uint32_t imageIndex) {
 
     vk::DescriptorImageInfo imageInfo {
         .sampler = *textureSampler,
-        .imageView = newTextureImage.view(),
+        .imageView = textureImage.view(),
         .imageLayout = vk::ImageLayout::eGeneral
     };
 

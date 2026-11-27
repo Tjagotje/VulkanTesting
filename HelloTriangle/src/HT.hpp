@@ -15,6 +15,8 @@ constexpr uint32_t WIDTH = 1200; // 1200
 constexpr uint32_t HEIGHT = 1000; // 1000
 constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
+constexpr uint32_t SHADOW_SIZE = 2048;
+
 class HelloTriangle {
 public:
     void run();
@@ -41,6 +43,7 @@ private:
     void createCommandPool();
     void createCommandBuffer();
     void createColorResources();
+    void createShadowResources();
     void recordCommandBuffer(
         uint32_t                imageIndex
     );
@@ -62,6 +65,7 @@ private:
     void createTextureImageView();
     void createTextureSampler();
     void createDepthResources();
+    void createShadowPipeline();
 
     // helper functions
     vk::raii::CommandBuffer beginSingleTimeCommands();
@@ -125,6 +129,14 @@ private:
     ht::Image depthImage;
     ht::Image colorImage;
 
+    uint32_t               mipLevels          = 0;
+    ht::Image              textureImage;
+    vk::raii::Sampler      textureSampler     = nullptr;
+
+    ht::Image shadowImage;
+    vk::raii::Sampler shadowSampler = nullptr;
+    vk::raii::Pipeline shadowPipeline = nullptr;
+
     vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e4;
 
 
@@ -180,13 +192,4 @@ private:
     float dist = 4.5f;
     float height = 2.0f;
 
-    uint32_t               mipLevels          = 0;
-
-    ht::Image              newTextureImage;
-
-    vk::raii::Image        textureImage       = nullptr;
-    vk::raii::DeviceMemory textureImageMemory = nullptr;
-
-    vk::raii::ImageView textureImageView = nullptr;
-    vk::raii::Sampler      textureSampler     = nullptr;
 };

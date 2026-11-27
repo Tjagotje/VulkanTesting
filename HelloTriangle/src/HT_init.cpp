@@ -31,9 +31,11 @@ void HelloTriangle::initVulkan() {
     createImageViews();
     createDescriptorSetLayout();
     createGraphicsPipeline();
+    createShadowPipeline();
     createCommandPool();
     createColorResources();
     createDepthResources();
+    createShadowResources();
     createTextureImage();
     createTextureSampler();
     createVertexBuffer();
@@ -319,7 +321,7 @@ void HelloTriangle::createTextureImage()
         }
     };
 
-    newTextureImage = ht::Image(
+    textureImage = ht::Image(
         &allocator,
         device,
         imageInfo,
@@ -327,10 +329,9 @@ void HelloTriangle::createTextureImage()
         {}
     );
 
-
     vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands();
 
-    newTextureImage.init_layout(
+    textureImage.init_layout(
         commandBuffer,        
         vk::ImageLayout::eGeneral,
         vk::AccessFlagBits2::eTransferWrite,
@@ -339,7 +340,7 @@ void HelloTriangle::createTextureImage()
     );
 
 
-    ht::Buffer _stagingBuffer = newTextureImage.copyMemoryStaged(
+    ht::Buffer _stagingBuffer = textureImage.copyMemoryStaged(
         pixels,
         imageSize,
         commandBuffer
@@ -347,7 +348,7 @@ void HelloTriangle::createTextureImage()
 
     stbi_image_free(pixels);
 
-    newTextureImage.gen_mipmaps(commandBuffer);
+    textureImage.gen_mipmaps(commandBuffer);
 
     endSingleTimeCommands(std::move(commandBuffer));
 
@@ -388,7 +389,11 @@ void HelloTriangle::createDepthResources() {
     vk::ImageViewCreateInfo viewInfo{
         .viewType         = vk::ImageViewType::e2D,
         .format           = vk::Format::eD32Sfloat,
-        .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1}
+        .subresourceRange = {
+            .aspectMask = vk::ImageAspectFlagBits::eDepth,
+            .levelCount = 1,
+            .layerCount = 1
+        }
     };
 
     depthImage = ht::Image(&allocator, device, imageInfo, viewInfo, {});
@@ -416,4 +421,47 @@ void HelloTriangle::createColorResources() {
     };
 
     colorImage = ht::Image(&allocator, device, imageInfo, viewInfo, {});
+}
+
+void HelloTriangle::createShadowResources() {
+    vk::ImageCreateInfo imageInfo{
+        .imageType   = vk::ImageType::e2D,
+        .format      = vk::Format::eD32Sfloat,
+        .extent      = {SHADOW_SIZE, SHADOW_SIZE, 1},
+        .mipLevels   = 1,
+        .arrayLayers = 1,
+        .samples     = vk::SampleCountFlagBits::e1,
+        .tiling      = vk::ImageTiling::eOptimal,
+        .usage       = vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled,
+        .sharingMode = vk::SharingMode::eExclusive
+    };
+
+    vk::ImageViewCreateInfo viewInfo{
+        .viewType         = vk::ImageViewType::e2D,
+        .format           = vk::Format::eD32Sfloat,
+        .subresourceRange = {
+            .aspectMask = vk::ImageAspectFlagBits::eDepth,
+            .levelCount = 1,
+            .layerCount = 1
+        }
+    };
+
+    shadowImage = ht::Image(&allocator, device, imageInfo, viewInfo, {});
+
+    vk::PhysicalDeviceProperties properties = physicalDevice.getProperties();
+    vk::SamplerCreateInfo        samplerInfo{
+        .magFilter        = vk::Filter::eLinear,
+        .minFilter        = vk::Filter::eLinear,
+        .mipmapMode       = vk::SamplerMipmapMode::eLinear,
+        .addressModeU     = vk::SamplerAddressMode::eRepeat,
+        .addressModeV     = vk::SamplerAddressMode::eRepeat,
+        .addressModeW     = vk::SamplerAddressMode::eRepeat,
+        .mipLodBias       = 0.0f,
+        .anisotropyEnable = vk::True,
+        .maxAnisotropy    = properties.limits.maxSamplerAnisotropy,
+        .minLod           = 0.0f,
+        .maxLod           = 1.0f
+    };
+
+    shadowSampler = vk::raii::Sampler(device, samplerInfo);
 }
