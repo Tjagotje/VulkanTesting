@@ -290,7 +290,7 @@ void HelloTriangle::recordCommandBuffer(uint32_t imageIndex) {
 
     vk::DescriptorImageInfo imageInfo {
         .sampler = *textureSampler,
-        .imageView = *textureImageView,
+        .imageView = newTextureImage.view(),
         .imageLayout = vk::ImageLayout::eGeneral
     };
 

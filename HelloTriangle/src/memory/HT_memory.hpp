@@ -1,6 +1,7 @@
 #pragma once
 
 #include "vulkan/vulkan.hpp"
+#include <cstdint>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 
@@ -116,6 +117,12 @@ public:
         const vk::raii::Queue& queue
     );
 
+    Buffer copyMemoryStaged(
+        const void *data,
+        vk::DeviceSize size,
+        const vk::raii::CommandBuffer& commandBuffer
+    );
+
     void transition_layout(
         vk::raii::CommandBuffer& commandBuffer,
         vk::ImageLayout          old_layout,
@@ -125,6 +132,18 @@ public:
         vk::PipelineStageFlags2  src_stage_mask,
         vk::PipelineStageFlags2  dst_stage_mask,
         vk::ImageAspectFlags     aspect_flags
+    );
+
+    void init_layout(
+        vk::raii::CommandBuffer& commandBuffer,
+        vk::ImageLayout          new_layout,
+        vk::AccessFlags2         dst_access_mask,
+        vk::PipelineStageFlags2  dst_stage_mask,
+        vk::ImageAspectFlags     aspect_flags
+    );
+
+    void gen_mipmaps(
+        vk::raii::CommandBuffer& commandBuffer
     );
 
 private:
@@ -137,7 +156,7 @@ private:
     vk::raii::ImageView mImgView    = nullptr; 
     void*               mMapped     = nullptr;
     vk::Extent3D        mExtent;
+    uint32_t            mLevelCount;
 };
-
 
 }

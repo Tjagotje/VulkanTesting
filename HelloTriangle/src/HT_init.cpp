@@ -327,127 +327,29 @@ void HelloTriangle::createTextureImage()
         {}
     );
 
-    newTextureImage.copyMemoryStaged(
-        pixels,
-        imageSize,
-        commandPool,
-        device,
-        queue
-    );
 
     vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands();
-    newTextureImage.transition_layout(
+
+    newTextureImage.init_layout(
         commandBuffer,        
-        vk::ImageLayout::eUndefined,
         vk::ImageLayout::eGeneral,
-        vk::AccessFlagBits2::eNone,
         vk::AccessFlagBits2::eTransferWrite,
-        vk::PipelineStageFlagBits2::eNone,
         vk::PipelineStageFlagBits2::eCopy,
         vk::ImageAspectFlagBits::eColor
     );
 
-    // TODO: miplevels
 
-    auto [stagingBuffer, stagingBufferMemory] = createBuffer(
+    ht::Buffer _stagingBuffer = newTextureImage.copyMemoryStaged(
+        pixels,
         imageSize,
-        vk::BufferUsageFlagBits::eTransferSrc,
-        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+        commandBuffer
     );
 
-    void* data = stagingBufferMemory.mapMemory(0, imageSize);
-    memcpy(data, pixels, imageSize);
-    stagingBufferMemory.unmapMemory();
     stbi_image_free(pixels);
 
-
-    textureImage = vk::raii::Image(device, imageInfo);
-    vk::MemoryRequirements memRequirements = textureImage.getMemoryRequirements();
-    vk::MemoryAllocateInfo allocInfo{
-        .allocationSize  = memRequirements.size,
-        .memoryTypeIndex = findMemoryType(
-            memRequirements.memoryTypeBits,
-            vk::MemoryPropertyFlagBits::eDeviceLocal)
-        };
-    textureImageMemory = vk::raii::DeviceMemory(device, allocInfo);
-    textureImage.bindMemory(textureImageMemory, 0);
-
-    vk::ImageMemoryBarrier2 barrier{
-        .srcStageMask        = vk::PipelineStageFlagBits2::eNone,
-        .srcAccessMask       = vk::AccessFlagBits2::eNone,
-        .dstStageMask        = vk::PipelineStageFlagBits2::eCopy,
-        .dstAccessMask       = vk::AccessFlagBits2::eTransferWrite,
-        .oldLayout           = vk::ImageLayout::eUndefined,
-        .newLayout           = vk::ImageLayout::eGeneral,
-        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .image               = *textureImage,
-        .subresourceRange = {vk::ImageAspectFlagBits::eColor,
-            0, mipLevels,
-            0, 1}
-    };
-    commandBuffer.pipelineBarrier2(vk::DependencyInfo{ .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier });
-    copyBufferToImage(commandBuffer, stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
-
-    // mipMaps
-
-    barrier.srcStageMask = vk::PipelineStageFlagBits2::eBlit;
-    barrier.dstStageMask = vk::PipelineStageFlagBits2::eBlit;
-    barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
-    barrier.dstAccessMask = vk::AccessFlagBits2::eTransferRead;
-    barrier.oldLayout = vk::ImageLayout::eGeneral;
-
-    int32_t mipWidth  = texWidth;
-    int32_t mipHeight = texHeight;
-
-    for (uint32_t i = 1; i < mipLevels; i++) {
-        barrier.subresourceRange = {
-            vk::ImageAspectFlagBits::eColor, i-1, 1, 0, 1
-        };
-
-        commandBuffer.pipelineBarrier2(vk::DependencyInfo{ .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier });
-
-        vk::ImageBlit blit = {
-            .srcSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = i - 1, .layerCount = 1},
-            .srcOffsets     = std::array<vk::Offset3D, 2>({{}, {mipWidth, mipHeight, 1}}),
-            .dstSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = i, .layerCount = 1},
-            .dstOffsets     = std::array<vk::Offset3D, 2>({{}, {1 < mipWidth ? mipWidth / 2 : 1, 1 < mipHeight ? mipHeight / 2 : 1, 1}})
-        };
-
-        if (i == mipLevels - 1) {
-            continue;
-        }
-
-        commandBuffer.blitImage(
-            textureImage, 
-            vk::ImageLayout::eGeneral, 
-            textureImage, 
-            vk::ImageLayout::eGeneral, 
-            blit, 
-            vk::Filter::eLinear
-        );
-    
-        if (1 < mipWidth) {
-            mipWidth /= 2;
-        } if (1 < mipHeight) {
-            mipHeight /= 2;
-        }
-    }
-
-    
-    barrier.srcAccessMask = vk::AccessFlagBits2::eTransferRead;
-    barrier.dstAccessMask = vk::AccessFlagBits2::eShaderSampledRead;
-    barrier.srcStageMask  = vk::PipelineStageFlagBits2::eBlit;
-    barrier.dstStageMask  = vk::PipelineStageFlagBits2::eFragmentShader; 
-
-    commandBuffer.pipelineBarrier2(vk::DependencyInfo{ .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier });
-
-    
-    // End of mipmap generation!
+    newTextureImage.gen_mipmaps(commandBuffer);
 
     endSingleTimeCommands(std::move(commandBuffer));
-
-    textureImageView = createImageView(*textureImage, vk::Format::eR8G8B8A8Srgb,  vk::ImageAspectFlagBits::eColor, mipLevels);
 
 }
 

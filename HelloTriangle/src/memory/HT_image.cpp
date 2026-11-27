@@ -37,10 +37,11 @@ Image::Image(
 
     mImg = raw;
     mMapped = info.pMappedData;
+    mLevelCount = imageInfo.mipLevels;
 
     viewInfo.image = mImg;
-    mExtent = imageInfo.extent;
 
+    mExtent = imageInfo.extent;
     mImgView = vk::raii::ImageView(device, viewInfo);
 };
 
@@ -50,6 +51,8 @@ void Image::swap(Image& o) noexcept {
     std::swap(mImg, o.mImg);
     std::swap(mImgView, o.mImgView);
     std::swap(mMapped, o.mMapped);
+    std::swap(mExtent, o.mExtent);
+    std::swap(mLevelCount, o.mLevelCount);
 }
 
 void Image::transition_layout(
@@ -75,7 +78,7 @@ void Image::transition_layout(
         .subresourceRange    = {
                 .aspectMask     = aspect_flags,
                 .baseMipLevel   = 0,
-                .levelCount     = 1,
+                .levelCount     = mLevelCount,
                 .baseArrayLayer = 0,
                 .layerCount     = 1}
     };
@@ -88,13 +91,106 @@ void Image::transition_layout(
     commandBuffer.pipelineBarrier2(dependency_info);
 }
 
-void Image::copyMemoryStaged(
+void Image::init_layout(
+    vk::raii::CommandBuffer& commandBuffer,
+    vk::ImageLayout          new_layout,
+    vk::AccessFlags2         dst_access_mask,
+    vk::PipelineStageFlags2  dst_stage_mask,
+    vk::ImageAspectFlags     aspect_flags
+) {
+    transition_layout(
+        commandBuffer, 
+        vk::ImageLayout::eUndefined,
+        new_layout,
+        vk::AccessFlagBits2::eNone,
+        dst_access_mask,
+        vk::PipelineStageFlagBits2::eNone,
+        dst_stage_mask,
+        aspect_flags
+    );
+}
+
+void Image::gen_mipmaps(
+    vk::raii::CommandBuffer& commandBuffer
+) {
+    vk::ImageMemoryBarrier2 barrier{
+        .srcStageMask        = vk::PipelineStageFlagBits2::eBlit,
+        .srcAccessMask       = vk::AccessFlagBits2::eTransferWrite,
+        .dstStageMask        = vk::PipelineStageFlagBits2::eBlit,
+        .dstAccessMask       = vk::AccessFlagBits2::eTransferRead,
+        .oldLayout           = vk::ImageLayout::eUndefined,
+        .newLayout           = vk::ImageLayout::eGeneral,
+        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .image               = mImg,
+        .subresourceRange = {vk::ImageAspectFlagBits::eColor,
+            0, mLevelCount,
+            0, 1}
+    };
+
+    barrier.srcStageMask = vk::PipelineStageFlagBits2::eBlit;
+    barrier.dstStageMask = vk::PipelineStageFlagBits2::eBlit;
+    barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
+    barrier.dstAccessMask = vk::AccessFlagBits2::eTransferRead;
+    barrier.oldLayout = vk::ImageLayout::eGeneral;
+
+    int32_t mipWidth  = mExtent.width;
+    int32_t mipHeight = mExtent.height;
+
+    for (uint32_t i = 1; i < mLevelCount; i++) {
+        barrier.subresourceRange = {
+            vk::ImageAspectFlagBits::eColor, i-1, 1, 0, 1
+        };
+
+        commandBuffer.pipelineBarrier2(vk::DependencyInfo{ .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier });
+
+        vk::ImageBlit blit = {
+            .srcSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = i - 1, .layerCount = 1},
+            .srcOffsets     = std::array<vk::Offset3D, 2>({{}, {mipWidth, mipHeight, 1}}),
+            .dstSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = i, .layerCount = 1},
+            .dstOffsets     = std::array<vk::Offset3D, 2>({{}, {1 < mipWidth ? mipWidth / 2 : 1, 1 < mipHeight ? mipHeight / 2 : 1, 1}})
+        };
+
+        if (i == mLevelCount - 1) {
+            continue;
+        }
+
+        commandBuffer.blitImage(
+            mImg, 
+            vk::ImageLayout::eGeneral, 
+            mImg, 
+            vk::ImageLayout::eGeneral, 
+            blit, 
+            vk::Filter::eLinear
+        );
+    
+        if (1 < mipWidth) {
+            mipWidth /= 2;
+        } if (1 < mipHeight) {
+            mipHeight /= 2;
+        }
+    }
+
+    
+    barrier.srcAccessMask = vk::AccessFlagBits2::eTransferRead;
+    barrier.dstAccessMask = vk::AccessFlagBits2::eShaderSampledRead;
+    barrier.srcStageMask  = vk::PipelineStageFlagBits2::eBlit;
+    barrier.dstStageMask  = vk::PipelineStageFlagBits2::eFragmentShader; 
+
+    commandBuffer.pipelineBarrier2(
+        vk::DependencyInfo{
+            .imageMemoryBarrierCount = 1,
+            .pImageMemoryBarriers = &barrier
+        }
+    );
+}
+
+
+Buffer Image::copyMemoryStaged(
     const void *data,
     vk::DeviceSize size,
-    const vk::raii::CommandPool& pool,
-    const vk::raii::Device& device,
-    const vk::raii::Queue& queue
-){
+    const vk::raii::CommandBuffer& commandBuffer
+) {
     Buffer stagingBuffer = {
         mAllocator,
         size,
@@ -106,16 +202,6 @@ void Image::copyMemoryStaged(
     };
 
     stagingBuffer.copyMemory(data, size);
-
-    vk::CommandBufferAllocateInfo allocInfo{
-        .commandPool = pool,
-        .level = vk::CommandBufferLevel::ePrimary,
-        .commandBufferCount = 1
-    };
-    vk::raii::CommandBuffer commandBuffer = std::move(vk::raii::CommandBuffers(device, allocInfo).front());
-    vk::CommandBufferBeginInfo beginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit};
-
-    commandBuffer.begin(beginInfo);
 
     vk::BufferImageCopy region {
         .bufferOffset = 0,
@@ -131,6 +217,30 @@ void Image::copyMemoryStaged(
         vk::ImageLayout::eGeneral,
         region
     );
+
+    return std::move(stagingBuffer);
+}
+
+void Image::copyMemoryStaged(
+    const void *data,
+    vk::DeviceSize size,
+    const vk::raii::CommandPool& pool,
+    const vk::raii::Device& device,
+    const vk::raii::Queue& queue
+){
+    
+
+    vk::CommandBufferAllocateInfo allocInfo{
+        .commandPool = pool,
+        .level = vk::CommandBufferLevel::ePrimary,
+        .commandBufferCount = 1
+    };
+    vk::raii::CommandBuffer commandBuffer = std::move(vk::raii::CommandBuffers(device, allocInfo).front());
+    vk::CommandBufferBeginInfo beginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit};
+
+    commandBuffer.begin(beginInfo);
+
+
 
     commandBuffer.end();
 
